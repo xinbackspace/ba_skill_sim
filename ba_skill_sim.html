@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>スキル順シミュレーター</title>
+<style>
+body { font-family: sans-serif; max-width: 950px; margin: 30px auto; padding: 0 15px; background: #f5f5f5; }
+.box { background: white; padding: 20px; margin-bottom: 15px; border-radius: 10px; }
+h1 { margin-top: 0; }
+textarea { width: 100%; min-height: 140px; box-sizing: border-box; padding: 10px; font-size: 16px; }
+input, select { padding: 7px; font-size: 15px; }
+button { padding: 10px 18px; font-size: 16px; cursor: pointer; }
+.setting-row { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+.condition { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.result { padding: 10px; margin-top: 10px; border-radius: 6px; background: #e8f5e9; }
+.no-result { background: #ffebee; }
+table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+th, td { border: 1px solid #ccc; padding: 7px; text-align: center; }
+th { background: #eee; }
+.left { background: #fff3cd; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>スキル順シミュレーター</h1>
+
+<div class="box">
+<h2>基本設定</h2>
+<div class="setting-row">
+<label for="slotCount"><b>スキル枠数:</b></label>
+<input type="number" id="slotCount" value="3" min="1" max="10" style="width: 70px;" onchange="updateConditionSlotOptions()">
+</div>
+</div>
+
+<div class="box">
+<h2>デッキ</h2>
+<textarea id="deckInput">ヒマリ
+アル
+リオ
+ネル
+カンナ
+セイア</textarea>
+</div>
+
+<div class="box">
+<h2>スキル使用順</h2>
+<textarea id="orderInput">ヒマリ
+アル
+リオC1
+ネルC1
+カンナ
+リオ
+セイア
+ネル
+アル
+ヒマリ
+リオC1
+カンナ
+リオ
+セイア
+ネル</textarea>
+</div>
+
+<div class="box">
+<h2>位置条件の設定</h2>
+<p style="font-size:14px; color:#555;">※「15手目 ネルが 枠1」と設定すると、<b>15手目にネルを使う直前</b>の配置をチェックします。</p>
+<div id="conditions"></div>
+<button onclick="addCondition()">＋ 条件追加</button>
+</div>
+
+<div class="box">
+<button onclick="search()">🔍 検索</button>
+<div id="result"></div>
+</div>
+
+<div class="box">
+<h2>結果詳細</h2>
+<div id="details"></div>
+</div>
+
+<script>
+function addCondition(turn = "", name = "", slotIdx = 0) {
+    const div = document.createElement("div");
+    div.className = "condition";
+    const slotCount = getSlotCount();
+    let options = "";
+    for (let i = 0; i < slotCount; i++) {
+        options += `<option value="${i}" ${i === slotIdx ? "selected" : ""}>枠${i + 1}</option>`;
+    }
+    div.innerHTML = `
+        <input type="number" class="condition-turn" placeholder="手数" min="1" value="${turn}" style="width: 70px;">
+        <span>手目の使用直前：</span>
+        <input type="text" class="condition-name" placeholder="キャラクター名" value="${name}" style="width: 120px;">
+        <span>が</span>
+        <select class="condition-slot">${options}</select>
+        <span>に配置</span>
+        <button onclick="this.parentElement.remove()">削除</button>
+    `;
+    document.getElementById("conditions").appendChild(div);
+}
+
+function updateConditionSlotOptions() {
+    const slotCount = getSlotCount();
+    const selects = document.querySelectorAll(".condition-slot");
+    selects.forEach(select => {
+        const currentVal = parseInt(select.value, 10);
+        select.innerHTML = "";
+        for (let i = 0; i < slotCount; i++) {
+            const opt = document.createElement("option");
+            opt.value = i;
+            opt.textContent = `枠${i + 1}`;
+            if (i === currentVal) opt.selected = true;
+            select.appendChild(opt);
+        }
+    });
+}
+
+// 初期条件：15手目の使用直前にネルが枠1（左端）
+addCondition(15, "ネル", 0);
+
+function getSlotCount() {
+    const val = parseInt(document.getElementById("slotCount").value, 10);
+    return isNaN(val) || val < 1 ? 3 : val;
+}
+
+function getDeck() {
+    return document.getElementById("deckInput").value.split("\n").map(x => x.trim()).filter(x => x);
+}
+
+function getOrder() {
+    return document.getElementById("orderInput").value.split("\n").map(x => x.trim()).filter(x => x);
+}
+
+function getConditions() {
+    const rows = document.querySelectorAll(".condition");
+    return [...rows].map(row => {
+        return {
+            turn: Number(row.querySelector(".condition-turn").value),
+            name: row.querySelector(".condition-name").value.trim(),
+            slotIdx: Number(row.querySelector(".condition-slot").value)
+        };
+    }).filter(x => x.turn > 0 && x.name);
+}
+
+function parseCard(cardStr) {
+    const match = cardStr.match(/^(.+?)(?:C(\d*))?$/);
+    if (!match) return { baseName: cardStr, cCount: 0 };
+    const baseName = match[1];
+    if (match[2] !== undefined) {
+        return { baseName, cCount: match[2] === "" ? 1 : parseInt(match[2], 10) };
+    } else if (cardStr.endsWith("C")) {
+        return { baseName, cCount: 1 };
+    }
+    return { baseName, cCount: 0 };
+}
+
+function getBaseName(cardStr) {
+    return parseCard(cardStr).baseName;
+}
+
+function solve(slots, deck, orderIndex, order, conditions, history, slotCount) {
+    if (orderIndex >= order.length) {
+        return history;
+    }
+
+    const nextTurn = orderIndex + 1;
+    const requested = order[orderIndex];
+    const reqBase = getBaseName(requested);
+
+    const matchingIndices = [];
+    for (let i = 0; i < slots.length; i++) {
+        if (getBaseName(slots[i]) === reqBase) {
+            matchingIndices.push(i);
+        }
+    }
+
+    if (matchingIndices.length === 0) {
+        return null;
+    }
+
+    for (const idx of matchingIndices) {
+        const nextSlots = [...slots];
+        const nextDeck = [...deck];
+
+        const currentCard = nextSlots[idx];
+        const reqParsed = parseCard(requested);
+        const currentParsed = parseCard(currentCard);
+
+        let activeCCount = reqParsed.cCount > 0 ? reqParsed.cCount : currentParsed.cCount;
+
+        if (activeCCount > 0) {
+            const nextCCount = activeCCount - 1;
+            if (nextCCount > 0) {
+                nextSlots[idx] = `${currentParsed.baseName}C${nextCCount}`;
+            } else {
+                nextSlots[idx] = currentParsed.baseName;
+            }
+        } else {
+            const returnedCard = currentParsed.baseName;
+            nextDeck.push(returnedCard);
+            nextSlots[idx] = nextDeck.shift() ?? "-";
+        }
+
+        const nextHistory = [
+            ...history,
+            {
+                turn: nextTurn,
+                use: requested,
+                slots: [...nextSlots],
+                deck: [...nextDeck]
+            }
+        ];
+
+        const res = solve(nextSlots, nextDeck, orderIndex + 1, order, conditions, nextHistory, slotCount);
+        if (res !== null) return res;
+    }
+
+    return null;
+}
+
+function permutations(array) {
+    const result = [];
+    function make(current, remaining) {
+        if (remaining.length === 0) {
+            result.push([...current]);
+            return;
+        }
+        for (let i = 0; i < remaining.length; i++) {
+            make(
+                [...current, remaining[i]],
+                [...remaining.slice(0, i), ...remaining.slice(i + 1)]
+            );
+        }
+    }
+    make([], array);
+    return result;
+}
+
+function search() {
+    const slotCount = getSlotCount();
+    const deck = getDeck();
+    const order = getOrder();
+    const conditions = getConditions();
+
+    if (deck.length < slotCount) {
+        alert(`デッキ枚数はスキル枠数（${slotCount}）以上にしてください。`);
+        return;
+    }
+
+    const candidates = permutations(deck);
+    const solutions = [];
+    const seenInitial = new Set();
+
+    for (const initial of candidates) {
+        const key = initial.join(",");
+        if (seenInitial.has(key)) continue;
+        seenInitial.add(key);
+
+        const initialSlots = initial.slice(0, slotCount);
+        const initialDeck = initial.slice(slotCount);
+
+        const initialHistory = [{
+            turn: 0,
+            use: "初期",
+            slots: [...initialSlots],
+            deck: [...initialDeck]
+        }];
+
+        const history = solve(initialSlots, initialDeck, 0, order, conditions, initialHistory, slotCount);
+
+        if (history === null) continue;
+
+        // 全手数完了後に条件を正確にチェック
+        let isMatch = true;
+        for (const cond of conditions) {
+            // N手目の使用直前＝(N-1)手目終了時の手札状態
+            const targetState = history[cond.turn - 1];
+            if (!targetState) {
+                isMatch = false;
+                break;
+            }
+            const cardInSlot = targetState.slots[cond.slotIdx];
+            if (!cardInSlot || getBaseName(cardInSlot) !== getBaseName(cond.name)) {
+                isMatch = false;
+                break;
+            }
+        }
+
+        if (isMatch) {
+            solutions.push({ history });
+        }
+    }
+
+    showResults(solutions, conditions, slotCount);
+}
+
+function showResults(solutions, conditions, slotCount) {
+    const result = document.getElementById("result");
+    const details = document.getElementById("details");
+    details.innerHTML = "";
+
+    if (solutions.length === 0) {
+        result.innerHTML = `<div class="result no-result">条件をすべて満たす初期配置はありませんでした。</div>`;
+        return;
+    }
+
+    result.innerHTML = `<div class="result">${solutions.length} 通り見つかりました。</div>`;
+
+    solutions.forEach((sol, number) => {
+        const history = sol.history;
+        const title = document.createElement("h3");
+        title.textContent = `候補 ${number + 1}： [初期手札] ${history[0].slots.join(" / ")} ＋ [山札] ${history[0].deck.join(" → ")}`;
+        details.appendChild(title);
+
+        const table = document.createElement("table");
+        let headerHTML = `<tr><th>手</th><th>使用</th>`;
+        for (let i = 1; i <= slotCount; i++) {
+            headerHTML += `<th>枠${i}</th>`;
+        }
+        headerHTML += `<th>山札</th></tr>`;
+        table.innerHTML = headerHTML;
+
+        history.forEach(state => {
+            const tr = document.createElement("tr");
+            if (conditions.some(c => c.turn - 1 === state.turn)) {
+                tr.className = "left";
+            }
+            let rowHTML = `<td>${state.turn}</td><td>${state.use}</td>`;
+            for (let i = 0; i < slotCount; i++) {
+                rowHTML += `<td>${state.slots[i] ?? "-"}</td>`;
+            }
+            rowHTML += `<td>${state.deck.join(" → ")}</td>`;
+            tr.innerHTML = rowHTML;
+            table.appendChild(tr);
+        });
+
+        details.appendChild(table);
+    });
+}
+</script>
+</body>
+</html>
