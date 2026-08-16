@@ -26,6 +26,20 @@ th { background: #eee; }
 <h1>スキル順シミュレーター</h1>
 
 <div class="box">
+書き方<br>
+通常使用: キャラクター名のみを入力します。 <br>
+例: ヒマリ / アル継続スキル: キャラ名の後ろに Cn を付けると、その回数分だけ手札にとどまり使用ごとにカウントダウンします。 <br>
+例: ドヒナC3（3回継続）<br>
+<br>
+<br>
+手札のカードを状態変更する（リオドヒナ、リオハナコなどの場合に使用）<br>
+リオ →ドヒナC2: リオを使用して山札へ送り、山札のドヒナを強制的にC2の状態で呼び出します<br>
+リオ、→ドヒナC2: リオを使用して山札へ送り、手札のドヒナ系統を強制的にドヒナC2の状態に更新します<br>
+</div>
+
+
+
+<div class="box">
 <h2>基本設定</h2>
 <div class="setting-row">
 <label for="slotCount"><b>スキル枠数:</b></label>
@@ -64,7 +78,6 @@ th { background: #eee; }
 
 <div class="box">
 <h2>位置条件の設定</h2>
-<p style="font-size:14px; color:#555;">※「15手目 ネルが 枠1」と設定すると、<b>15手目にネルを使う直前</b>の配置をチェックします。</p>
 <div id="conditions"></div>
 <button onclick="addCondition()">＋ 条件追加</button>
 </div>
@@ -116,7 +129,7 @@ function updateConditionSlotOptions() {
     });
 }
 
-// 初期条件：15手目の使用直前にネルが枠1（左端）
+// 9手目 セイアが 枠1（左側）
 addCondition(15, "ネル", 0);
 
 function getSlotCount() {
@@ -159,15 +172,68 @@ function getBaseName(cardStr) {
     return parseCard(cardStr).baseName;
 }
 
-function solve(slots, deck, orderIndex, order, conditions, history, slotCount) {
-    if (orderIndex >= order.length) {
-        return history;
+function processSubAction(slots, deck, actionToken, turn, debug) {
+    actionToken = actionToken.trim();
+    if (!actionToken) return [{ slots, deck }];
+
+    if (debug) console.log(`[Turn ${turn}] 処理中アクション: "${actionToken}" | 手札: [${slots.join(', ')}] | 山札: [${deck.join(' -> ')}]`);
+
+    // 1. 先頭が 「->」 または 「→」 の場合（例：→ドヒナC3）
+    if (actionToken.startsWith("->") || actionToken.startsWith("→")) {
+        const targetToken = actionToken.replace(/^->|^→/, "").trim();
+        if (!targetToken) return [{ slots, deck }];
+
+        let currentSlots = [...slots];
+        const targetBase = getBaseName(targetToken);
+        const handTargetIdx = currentSlots.findIndex(s => s !== "-" && getBaseName(s) === targetBase);
+        
+        if (handTargetIdx === -1) {
+            if (debug) console.warn(`[Turn ${turn}] 失敗: 手札変更対象 "${targetBase}" が手札に見つかりません。`);
+            return [];
+        }
+
+        currentSlots[handTargetIdx] = targetToken;
+        if (debug) console.log(`[Turn ${turn}] 手札更新成功: 枠${handTargetIdx + 1} の "${targetBase}" を "${targetToken}" に変更`);
+
+        return [{ slots: currentSlots, deck: [...deck] }];
     }
 
-    const nextTurn = orderIndex + 1;
-    const requested = order[orderIndex];
-    const reqBase = getBaseName(requested);
+    // 2. 矢印を含む組み合わせパターン（例：リオ→ドヒナC2）
+    if (actionToken.includes("->") || actionToken.includes("→")) {
+        const parts = actionToken.split(/->|→/);
+        const leftToken = parts[0].trim();
+        const rightToken = parts[1].trim();
 
+        let currentSlots = [...slots];
+        let currentDeck = [...deck];
+
+        const reqBase = getBaseName(leftToken);
+        const foundIdx = currentSlots.findIndex(s => s !== "-" && getBaseName(s) === reqBase);
+        if (foundIdx === -1) {
+            if (debug) console.warn(`[Turn ${turn}] 失敗: 左側カード "${reqBase}" が手札にありません。`);
+            return [];
+        }
+
+        currentDeck.push(reqBase);
+        currentSlots[foundIdx] = "-";
+
+        if (rightToken) {
+            const targetBase = getBaseName(rightToken);
+            const deckTargetIdx = currentDeck.findIndex(d => getBaseName(d) === targetBase);
+            if (deckTargetIdx === -1) {
+                if (debug) console.warn(`[Turn ${turn}] 失敗: 右側カード "${targetBase}" が山札にありません。`);
+                return [];
+            }
+
+            currentDeck.splice(deckTargetIdx, 1);
+            currentSlots[foundIdx] = rightToken;
+        }
+
+        return [{ slots: currentSlots, deck: currentDeck }];
+    }
+
+    // 3. 通常の単一カード使用処理
+    const reqBase = getBaseName(actionToken);
     const matchingIndices = [];
     for (let i = 0; i < slots.length; i++) {
         if (getBaseName(slots[i]) === reqBase) {
@@ -176,43 +242,81 @@ function solve(slots, deck, orderIndex, order, conditions, history, slotCount) {
     }
 
     if (matchingIndices.length === 0) {
-        return null;
+        if (debug) console.warn(`[Turn ${turn}] 失敗: 対象カード "${reqBase}" が手札に見つかりません。`);
+        return [];
     }
 
+    const results = [];
     for (const idx of matchingIndices) {
         const nextSlots = [...slots];
         const nextDeck = [...deck];
 
-        const currentCard = nextSlots[idx];
-        const reqParsed = parseCard(requested);
-        const currentParsed = parseCard(currentCard);
+        const reqParsed = parseCard(actionToken);
 
-        let activeCCount = reqParsed.cCount > 0 ? reqParsed.cCount : currentParsed.cCount;
-
-        if (activeCCount > 0) {
-            const nextCCount = activeCCount - 1;
-            if (nextCCount > 0) {
-                nextSlots[idx] = `${currentParsed.baseName}C${nextCCount}`;
-            } else {
-                nextSlots[idx] = currentParsed.baseName;
-            }
+        if (reqParsed.cCount > 0) {
+            nextSlots[idx] = reqParsed.baseName;
+            if (debug) console.log(`[Turn ${turn}] C付使用: 枠${idx + 1} の "${reqParsed.baseName}" を保持（消費なし）`);
         } else {
-            const returnedCard = currentParsed.baseName;
+            const returnedCard = getBaseName(nextSlots[idx]);
             nextDeck.push(returnedCard);
-            nextSlots[idx] = nextDeck.shift() ?? "-";
+            nextSlots[idx] = "-";
+            if (debug) console.log(`[Turn ${turn}] カード消費: 枠${idx + 1} の "${returnedCard}" を山札末尾へ移動`);
         }
+        results.push({ slots: nextSlots, deck: nextDeck });
+    }
 
+    return results;
+}
+
+function solve(slots, deck, orderIndex, order, conditions, history, slotCount, debug = false) {
+    if (orderIndex >= order.length) {
+        return history;
+    }
+
+    const nextTurn = orderIndex + 1;
+    const rawOrderLine = order[orderIndex];
+
+    const tokens = rawOrderLine.split(/[\s,、]+/).filter(t => t.trim() !== "");
+
+    let currentStates = [{ slots: [...slots], deck: [...deck] }];
+
+    for (const token of tokens) {
+        let nextStates = [];
+        for (const state of currentStates) {
+            const resStates = processSubAction(state.slots, state.deck, token, nextTurn, debug);
+            nextStates.push(...resStates);
+        }
+        currentStates = nextStates;
+        if (currentStates.length === 0) break;
+    }
+
+    if (currentStates.length === 0) {
+        return null;
+    }
+
+    // 1ターン内の全サブアクション完了後に空いている手札枠（-）を一括補填
+    for (let state of currentStates) {
+        for (let i = 0; i < state.slots.length; i++) {
+            if (state.slots[i] === "-") {
+                const drawn = state.deck.shift() ?? "-";
+                state.slots[i] = drawn;
+                if (debug) console.log(`[Turn ${nextTurn}] 補充: 枠${i + 1} に "${drawn}" をドロー`);
+            }
+        }
+    }
+
+    for (const finalState of currentStates) {
         const nextHistory = [
             ...history,
             {
                 turn: nextTurn,
-                use: requested,
-                slots: [...nextSlots],
-                deck: [...nextDeck]
+                use: rawOrderLine,
+                slots: [...finalState.slots],
+                deck: [...finalState.deck]
             }
         ];
 
-        const res = solve(nextSlots, nextDeck, orderIndex + 1, order, conditions, nextHistory, slotCount);
+        const res = solve(finalState.slots, finalState.deck, orderIndex + 1, order, conditions, nextHistory, slotCount, debug);
         if (res !== null) return res;
     }
 
@@ -238,6 +342,9 @@ function permutations(array) {
 }
 
 function search() {
+    console.clear();
+    console.log("=== 検索処理を開始します ===");
+
     const slotCount = getSlotCount();
     const deck = getDeck();
     const order = getOrder();
@@ -252,6 +359,7 @@ function search() {
     const solutions = [];
     const seenInitial = new Set();
 
+    let count = 0;
     for (const initial of candidates) {
         const key = initial.join(",");
         if (seenInitial.has(key)) continue;
@@ -267,14 +375,19 @@ function search() {
             deck: [...initialDeck]
         }];
 
-        const history = solve(initialSlots, initialDeck, 0, order, conditions, initialHistory, slotCount);
+        const isFirst = (count === 0);
+        if (isFirst) {
+            console.log(`--- [デバッグトレース] 初期手札: [${initialSlots.join(', ')}] | 山札: [${initialDeck.join(' -> ')}] ---`);
+        }
+
+        const history = solve(initialSlots, initialDeck, 0, order, conditions, initialHistory, slotCount, isFirst);
+
+        count++;
 
         if (history === null) continue;
 
-        // 全手数完了後に条件を正確にチェック
         let isMatch = true;
         for (const cond of conditions) {
-            // N手目の使用直前＝(N-1)手目終了時の手札状態
             const targetState = history[cond.turn - 1];
             if (!targetState) {
                 isMatch = false;
@@ -292,6 +405,7 @@ function search() {
         }
     }
 
+    console.log(`検索完了: 合計 ${solutions.length} 件の解が見つかりました。`);
     showResults(solutions, conditions, slotCount);
 }
 
@@ -301,7 +415,7 @@ function showResults(solutions, conditions, slotCount) {
     details.innerHTML = "";
 
     if (solutions.length === 0) {
-        result.innerHTML = `<div class="result no-result">条件をすべて満たす初期配置はありませんでした。</div>`;
+        result.innerHTML = `<div class="result no-result">条件をすべて満たす初期配置はありませんでした。（F12のコンソールをご確認ください）</div>`;
         return;
     }
 
