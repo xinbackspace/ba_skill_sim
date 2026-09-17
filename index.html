@@ -363,12 +363,13 @@ function search() {
 
     let count = 0;
     for (const initial of candidates) {
-        const key = initial.join(",");
-        if (seenInitial.has(key)) continue;
-        seenInitial.add(key);
-
         const initialSlots = initial.slice(0, slotCount);
         const initialDeck = initial.slice(slotCount);
+
+        // 重複判定のキーを「初期手札の並び」に変更（これで入力順によるスキップを防止）
+        const slotKey = initialSlots.join(",");
+        if (seenInitial.has(slotKey)) continue;
+        seenInitial.add(slotKey);
 
         const initialHistory = [{
             turn: 0,
