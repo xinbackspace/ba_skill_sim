@@ -20,6 +20,7 @@ th, td { border: 1px solid #ccc; padding: 7px; text-align: center; }
 th { background: #eee; }
 .left { background: #fff3cd; font-weight: bold; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
 </head>
 <body>
 
@@ -86,6 +87,7 @@ th { background: #eee; }
 
 <div class="box">
 <button onclick="search()">🔍 検索</button>
+<button onclick="shareURL()">🔗 設定を共有（URLコピー）</button>
 <div id="result"></div>
 </div>
 
@@ -474,6 +476,72 @@ function showResults(solutions, conditions, slotCount) {
         details.appendChild(table);
     });
 }
+
+// --- URL共有（圧縮処理） ---
+function shareURL() {
+    const data = {
+        slotCount: getSlotCount(),
+        deck: document.getElementById("deckInput").value,
+        order: document.getElementById("orderInput").value,
+        conditions: getConditions()
+    };
+
+    const jsonStr = JSON.stringify(data);
+    // LZ-StringでURL安全な形式に圧縮
+    const compressed = LZString.compressToEncodedURIComponent(jsonStr);
+
+    const shareURL = `${location.origin}${location.pathname}#share=${compressed}`;
+
+    navigator.clipboard.writeText(shareURL).then(() => {
+        alert("共有用URLをクリップボードにコピーしました！");
+    }).catch(err => {
+        console.error("コピーに失敗しました:", err);
+        prompt("以下のURLをコピーしてください:", shareURL);
+    });
+}
+
+// --- URLパラメータ読み込み（解凍処理） ---
+function loadFromURLHash() {
+    const hash = window.location.hash;
+    if (!hash.startsWith("#share=")) return;
+
+    const compressed = hash.replace("#share=", "");
+    try {
+        const jsonStr = LZString.decompressFromEncodedURIComponent(compressed);
+        if (!jsonStr) return;
+
+        const data = JSON.parse(jsonStr);
+
+        // 基本設定の反映
+        if (data.slotCount) {
+            document.getElementById("slotCount").value = data.slotCount;
+        }
+
+        // テキストエリアの反映
+        if (data.deck !== undefined) {
+            document.getElementById("deckInput").value = data.deck;
+        }
+        if (data.order !== undefined) {
+            document.getElementById("orderInput").value = data.order;
+        }
+
+        // 位置条件の反映
+        if (Array.isArray(data.conditions)) {
+            const container = document.getElementById("conditions");
+            container.innerHTML = ""; // 既存条件をクリア
+            data.conditions.forEach(c => {
+                addCondition(c.turn, c.name, c.slotIdx);
+            });
+        }
+    } catch (e) {
+        console.error("URLパラメータの復元に失敗しました:", e);
+    }
+}
+
+// ページ読み込み時にハッシュをチェック
+window.addEventListener("DOMContentLoaded", () => {
+    loadFromURLHash();
+});
 </script>
 </body>
 </html>
