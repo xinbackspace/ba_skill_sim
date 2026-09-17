@@ -481,62 +481,65 @@ function showResults(solutions, conditions, slotCount) {
 
 // --- URL共有（圧縮処理） ---
 function shareURL() {
+    // キー名を1文字に短縮してデータサイズを削る
     const data = {
-        slotCount: getSlotCount(),
-        deck: document.getElementById("deckInput").value,
-        order: document.getElementById("orderInput").value,
-        conditions: getConditions()
+        s: getSlotCount(),
+        d: document.getElementById("deckInput").value,
+        o: document.getElementById("orderInput").value,
+        c: getConditions().map(cond => [cond.turn, cond.name, cond.slotIdx]) // 配列化でさらに軽量化
     };
 
     const jsonStr = JSON.stringify(data);
-    // LZ-StringでURL安全な形式に圧縮
-    const compressed = LZString.compressToEncodedURIComponent(jsonStr);
+    
+    // Base64圧縮＋URL安全文字への置換
+    let compressed = LZString.compressToBase64(jsonStr)
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
 
-    const shareURL = `${location.origin}${location.pathname}#share=${compressed}`;
+    const shareURL = `${location.origin}${location.pathname}#s=${compressed}`;
 
     navigator.clipboard.writeText(shareURL).then(() => {
-        alert("共有用URLをクリップボードにコピーしました！");
-    }).catch(err => {
-        console.error("コピーに失敗しました:", err);
+        alert(`共有用URLをコピーしました！（長さ: ${shareURL.length}文字）`);
+    }).catch(() => {
         prompt("以下のURLをコピーしてください:", shareURL);
     });
 }
 
-// --- URLパラメータ読み込み（解凍処理） ---
+// --- URL読み込み（最適化版） ---
 function loadFromURLHash() {
     const hash = window.location.hash;
-    if (!hash.startsWith("#share=")) return;
+    if (!hash.startsWith("#s=")) return;
 
-    const compressed = hash.replace("#share=", "");
+    let compressed = hash.replace("#s=", "")
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+
+    // パディング（=）の復元
+    while (compressed.length % 4 !== 0) {
+        compressed += '=';
+    }
+
     try {
-        const jsonStr = LZString.decompressFromEncodedURIComponent(compressed);
+        const jsonStr = LZString.decompressFromBase64(compressed);
         if (!jsonStr) return;
 
         const data = JSON.parse(jsonStr);
 
-        // 基本設定の反映
-        if (data.slotCount) {
-            document.getElementById("slotCount").value = data.slotCount;
-        }
+        if (data.s) document.getElementById("slotCount").value = data.s;
+        if (data.d !== undefined) document.getElementById("deckInput").value = data.d;
+        if (data.o !== undefined) document.getElementById("orderInput").value = data.o;
 
-        // テキストエリアの反映
-        if (data.deck !== undefined) {
-            document.getElementById("deckInput").value = data.deck;
-        }
-        if (data.order !== undefined) {
-            document.getElementById("orderInput").value = data.order;
-        }
-
-        // 位置条件の反映
-        if (Array.isArray(data.conditions)) {
+        if (Array.isArray(data.c)) {
             const container = document.getElementById("conditions");
-            container.innerHTML = ""; // 既存条件をクリア
-            data.conditions.forEach(c => {
-                addCondition(c.turn, c.name, c.slotIdx);
+            container.innerHTML = "";
+            data.c.forEach(cond => {
+                // 配列形式 [turn, name, slotIdx] から復元
+                addCondition(cond[0], cond[1], cond[2]);
             });
         }
     } catch (e) {
-        console.error("URLパラメータの復元に失敗しました:", e);
+        console.error("URLの復元に失敗しました:", e);
     }
 }
 
