@@ -357,19 +357,14 @@ function search() {
         return;
     }
 
+    // デッキの全順列（手札＋山札の全パターン）を取得
     const candidates = permutations(deck);
     const solutions = [];
-    const seenInitial = new Set();
 
     let count = 0;
     for (const initial of candidates) {
         const initialSlots = initial.slice(0, slotCount);
         const initialDeck = initial.slice(slotCount);
-
-        // 重複判定のキーを「初期手札の並び」に変更（これで入力順によるスキップを防止）
-        const slotKey = initialSlots.join(",");
-        if (seenInitial.has(slotKey)) continue;
-        seenInitial.add(slotKey);
 
         const initialHistory = [{
             turn: 0,
@@ -383,12 +378,14 @@ function search() {
             console.log(`--- [デバッグトレース] 初期手札: [${initialSlots.join(', ')}] | 山札: [${initialDeck.join(' -> ')}] ---`);
         }
 
-        const history = solve(initialSlots, initialDeck, 0, order, conditions, initialHistory, slotCount, isFirst);
-
         count++;
+
+        // シミュレーション実行
+        const history = solve(initialSlots, initialDeck, 0, order, conditions, initialHistory, slotCount, isFirst);
 
         if (history === null) continue;
 
+        // 条件チェック
         let isMatch = true;
         for (const cond of conditions) {
             const targetState = history[cond.turn - 1];
@@ -411,7 +408,7 @@ function search() {
     console.log(`検索完了: 合計 ${solutions.length} 件の解が見つかりました。`);
     showResults(solutions, conditions, slotCount);
 }
-
+    
 function showResults(solutions, conditions, slotCount) {
     const result = document.getElementById("result");
     const details = document.getElementById("details");
