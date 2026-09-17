@@ -270,55 +270,60 @@ function processSubAction(slots, deck, actionToken, turn, debug) {
     return results;
 }
 
-function solve(slots, deck, orderIndex, order, conditions, history, slotCount, debug = false) {
+function solve(slots, deck, orderIndex, order, history, slotCount) {
     if (orderIndex >= order.length) {
         return history;
     }
 
     const nextTurn = orderIndex + 1;
-    const rawOrderLine = order[orderIndex];
+    const requested = order[orderIndex];
+    const reqBase = getBaseName(requested);
 
-    const tokens = rawOrderLine.split(/[\s,、]+/).filter(t => t.trim() !== "");
-
-    let currentStates = [{ slots: [...slots], deck: [...deck] }];
-
-    for (const token of tokens) {
-        let nextStates = [];
-        for (const state of currentStates) {
-            const resStates = processSubAction(state.slots, state.deck, token, nextTurn, debug);
-            nextStates.push(...resStates);
+    const matchingIndices = [];
+    for (let i = 0; i < slots.length; i++) {
+        if (getBaseName(slots[i]) === reqBase) {
+            matchingIndices.push(i);
         }
-        currentStates = nextStates;
-        if (currentStates.length === 0) break;
     }
 
-    if (currentStates.length === 0) {
+    if (matchingIndices.length === 0) {
         return null;
     }
 
-    // 1ターン内の全サブアクション完了後に空いている手札枠（-）を一括補填
-    for (let state of currentStates) {
-        for (let i = 0; i < state.slots.length; i++) {
-            if (state.slots[i] === "-") {
-                const drawn = state.deck.shift() ?? "-";
-                state.slots[i] = drawn;
-                if (debug) console.log(`[Turn ${nextTurn}] 補充: 枠${i + 1} に "${drawn}" をドロー`);
-            }
-        }
-    }
+    for (const idx of matchingIndices) {
+        const nextSlots = [...slots];
+        const nextDeck = [...deck];
 
-    for (const finalState of currentStates) {
+        const currentCard = nextSlots[idx];
+        const reqParsed = parseCard(requested);
+        const currentParsed = parseCard(currentCard);
+
+        let activeCCount = reqParsed.cCount > 0 ? reqParsed.cCount : currentParsed.cCount;
+
+        if (activeCCount > 0) {
+            const nextCCount = activeCCount - 1;
+            if (nextCCount > 0) {
+                nextSlots[idx] = `${currentParsed.baseName}C${nextCCount}`;
+            } else {
+                nextSlots[idx] = currentParsed.baseName;
+            }
+        } else {
+            const returnedCard = currentParsed.baseName;
+            nextDeck.push(returnedCard);
+            nextSlots[idx] = nextDeck.shift() ?? "-";
+        }
+
         const nextHistory = [
             ...history,
             {
                 turn: nextTurn,
-                use: rawOrderLine,
-                slots: [...finalState.slots],
-                deck: [...finalState.deck]
+                use: requested,
+                slots: [...nextSlots],
+                deck: [...nextDeck]
             }
         ];
 
-        const res = solve(finalState.slots, finalState.deck, orderIndex + 1, order, conditions, nextHistory, slotCount, debug);
+        const res = solve(nextSlots, nextDeck, orderIndex + 1, order, nextHistory, slotCount);
         if (res !== null) return res;
     }
 
@@ -345,7 +350,7 @@ function permutations(array) {
 
 function search() {
     console.clear();
-    console.log("=== シミュレーション検索開始 ===");
+    console.log("=== 検索処理を開始します ===");
 
     const slotCount = getSlotCount();
     const deck = getDeck();
@@ -360,8 +365,8 @@ function search() {
     const candidates = permutations(deck);
     const solutions = [];
     const failureStats = {
-        cardNotFound: 0, // 手札に対象カードがなく途中で進行不能
-        conditionMismatch: 0 // 手順は最後まで通ったが条件不一致
+        cardNotFound: 0,       // 途中手札に対象カードがなく失敗
+        conditionMismatch: 0   // 手順は通ったが指定条件不一致で失敗
     };
 
     console.log(`検証候補の総パターン数: ${candidates.length}`);
@@ -377,15 +382,14 @@ function search() {
             deck: [...initialDeck]
         }];
 
-        // isFirstフラグを外し、デバッグ用の無駄な個別出力を行わずに高速シミュレーション
-        const history = solve(initialSlots, initialDeck, 0, order, conditions, initialHistory, slotCount);
+        // solveを呼ぶ（isFirst フラグなどは渡さない）
+        const history = solve(initialSlots, initialDeck, 0, order, initialHistory, slotCount);
 
         if (history === null) {
             failureStats.cardNotFound++;
             continue;
         }
 
-        // 条件チェック
         let isMatch = true;
         for (const cond of conditions) {
             const targetState = history[cond.turn - 1];
@@ -407,7 +411,7 @@ function search() {
         }
     }
 
-    // === 処理結果サマリーの出力 ===
+    // 集計結果のみを出力
     console.log("\n================ 検索結果サマリー ================");
     console.log(`全試行パターン数: ${candidates.length}`);
     console.log(`成功（条件達成）: ${solutions.length} 件`);
@@ -418,7 +422,7 @@ function search() {
     if (solutions.length > 0) {
         console.log("\n【成功した初期配置一覧】");
         solutions.forEach((sol, idx) => {
-            console.log(`解 #${idx + 1}: 手札 [${sol.initialSlots.join(', ')}] | 山札 [${sol.initialDeck.join(' -> ')}]`);
+            console.log(`解 #${idx + 1}: 初期手札 [${sol.initialSlots.join(', ')}] | 山札 [${sol.initialDeck.join(' -> ')}]`);
         });
     } else {
         console.warn("\n条件を満たす初期配置は見つかりませんでした。");
