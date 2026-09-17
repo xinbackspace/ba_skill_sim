@@ -345,7 +345,7 @@ function permutations(array) {
 
 function search() {
     console.clear();
-    console.log("=== 検索処理を開始します ===");
+    console.log("=== シミュレーション検索開始 ===");
 
     const slotCount = getSlotCount();
     const deck = getDeck();
@@ -357,11 +357,15 @@ function search() {
         return;
     }
 
-    // デッキの全順列（手札＋山札の全パターン）を取得
     const candidates = permutations(deck);
     const solutions = [];
+    const failureStats = {
+        cardNotFound: 0, // 手札に対象カードがなく途中で進行不能
+        conditionMismatch: 0 // 手順は最後まで通ったが条件不一致
+    };
 
-    let count = 0;
+    console.log(`検証候補の総パターン数: ${candidates.length}`);
+
     for (const initial of candidates) {
         const initialSlots = initial.slice(0, slotCount);
         const initialDeck = initial.slice(slotCount);
@@ -373,17 +377,13 @@ function search() {
             deck: [...initialDeck]
         }];
 
-        const isFirst = (count === 0);
-        if (isFirst) {
-            console.log(`--- [デバッグトレース] 初期手札: [${initialSlots.join(', ')}] | 山札: [${initialDeck.join(' -> ')}] ---`);
+        // isFirstフラグを外し、デバッグ用の無駄な個別出力を行わずに高速シミュレーション
+        const history = solve(initialSlots, initialDeck, 0, order, conditions, initialHistory, slotCount);
+
+        if (history === null) {
+            failureStats.cardNotFound++;
+            continue;
         }
-
-        count++;
-
-        // シミュレーション実行
-        const history = solve(initialSlots, initialDeck, 0, order, conditions, initialHistory, slotCount, isFirst);
-
-        if (history === null) continue;
 
         // 条件チェック
         let isMatch = true;
@@ -401,11 +401,29 @@ function search() {
         }
 
         if (isMatch) {
-            solutions.push({ history });
+            solutions.push({ history, initialSlots, initialDeck });
+        } else {
+            failureStats.conditionMismatch++;
         }
     }
 
-    console.log(`検索完了: 合計 ${solutions.length} 件の解が見つかりました。`);
+    // === 処理結果サマリーの出力 ===
+    console.log("\n================ 検索結果サマリー ================");
+    console.log(`全試行パターン数: ${candidates.length}`);
+    console.log(`成功（条件達成）: ${solutions.length} 件`);
+    console.log(`失敗（進行不能）: ${failureStats.cardNotFound} 件`);
+    console.log(`失敗（条件不一致）: ${failureStats.conditionMismatch} 件`);
+    console.log("=================================================");
+
+    if (solutions.length > 0) {
+        console.log("\n【成功した初期配置一覧】");
+        solutions.forEach((sol, idx) => {
+            console.log(`解 #${idx + 1}: 手札 [${sol.initialSlots.join(', ')}] | 山札 [${sol.initialDeck.join(' -> ')}]`);
+        });
+    } else {
+        console.warn("\n条件を満たす初期配置は見つかりませんでした。");
+    }
+
     showResults(solutions, conditions, slotCount);
 }
     
