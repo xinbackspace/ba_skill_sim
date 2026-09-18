@@ -78,7 +78,10 @@ th { background: #eee; }
 </div>
 
 <div class="box">
-<h2>スキル使用順</h2>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+  <h2 style="margin: 0;">スキル使用順</h2>
+  <button onclick="parseTL()" style="padding: 5px 12px; font-size: 14px;">📋 TL整形 (テキスト抽出)</button>
+</div>
 <textarea id="orderInput">ヒマリ
 アル
 リオK1
@@ -619,6 +622,63 @@ function loadFromURLHash() {
     }
 }
 
+function parseTL() {
+    const orderInput = document.getElementById("orderInput");
+    const rawText = orderInput.value;
+    if (!rawText.trim()) return;
+
+    // デッキに登録されているキャラクターのベース名一覧を取得
+    const deckBases = getDeck().map(c => getBaseName(c));
+
+    const lines = rawText.split("\n");
+    const extractedSkills = [];
+
+    lines.forEach(line => {
+        let text = line.trim();
+        if (!text) return;
+
+        // 1. タイム表記 (00:00.000 や 0:00) を削除
+        text = text.replace(/\b\d{1,2}:\d{2}(?:\.\d{1,3})?\b/g, "");
+
+        // 2. コスト表記 (3c, c3, 10c など) を削除
+        text = text.replace(/\b\d+c\b/gi, "").replace(/\bc\d+\b/gi, "");
+
+        // 3. （）や()で囲まれた補足テキストを削除 (例: リオ（ユウカ） -> リオ)
+        text = text.replace(/（[^）]*）|\([^)]*\)/g, "");
+
+        // 4. キャラクター名の前につく「即」を削除
+        text = text.replace(/即/g, "");
+
+        // 5. 「、」「,」やスペース（全角半角）で分割
+        const tokens = text.split(/[,、\s]+/);
+
+        tokens.forEach(token => {
+            const trimmed = token.trim();
+            if (!trimmed) return;
+
+            // トークンのベース名（Kカウントや落とし等の記号を除いた部分）
+            const base = getBaseName(trimmed);
+
+            // デッキ内のキャラ名に含まれるか、またはデッキのいずれかのキャラ名がトークンに含まれているか判定
+            const matchedDeckChar = deckBases.find(deckName => 
+                base === deckName || (deckName && base.includes(deckName))
+            );
+
+            if (matchedDeckChar) {
+                // デッキキャラと一致した場合、元の記号（K2等）を維持しつつ基本名を補正するか、そのまま抽出
+                extractedSkills.push(trimmed);
+            }
+        });
+    });
+
+    if (extractedSkills.length === 0) {
+        alert("TLテキストからデッキに含まれるキャラクターを抽出できませんでした。");
+        return;
+    }
+
+    orderInput.value = extractedSkills.join("\n");
+}
+ 
 window.addEventListener("DOMContentLoaded", () => {
     loadFromURLHash();
 });
