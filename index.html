@@ -31,8 +31,11 @@ th { background: #eee; }
 通常使用: キャラクター名のみを入力します。 <br>
 例: ヒマリ / アル<br>
 <br>
-即時ドロースキル: キャラ名の後ろに Kn を付けると、その回数分だけ手札にとどまり使用ごとにカウントダウンします。 <br>
-例: ドヒナK3（3回継続）<br>
+即時ドロースキル: キャラ名の後ろに Kn を付けると、その回数分だけ手札にとどまり使用ごとにカウントダウンします。(Keep) <br>
+Kのみの場合はK1と見なします。<br>
+例: <br>
+ドヒナK3（ドヒナ3回継続）<br>
+リオK（リオ1回継続）<br>
 <br>
 <br>
 手札のカードを状態変更する（リオコピーからドヒナ/ハナコなどの呼び出しや、キャラ落としによるシステム的な更新の場合に使用）<br>
@@ -49,7 +52,7 @@ th { background: #eee; }
 <label for="slotCount"><b>スキル枠数:</b></label>
 <input type="number" id="slotCount" value="3" min="1" max="10" style="width: 70px;" onchange="updateConditionSlotOptions()">
 </div>
-   ※３枠以外（制約解除決戦）は未対応<br>
+※3枠以外（制約解除決戦）は未対応<br>
 </div>
 
 <div class="box">
