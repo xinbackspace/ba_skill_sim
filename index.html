@@ -384,14 +384,14 @@ function solve(slots, deck, orderIndex, order, history, slotCount) {
         return history;
     }
 
-    // 現在の到達インデックス（orderIdx - 1 が直前に成功したスキルインデックス）を更新
-    const currentReachedIndex = orderIdx - 1;
+    // 現在の到達インデックス（orderIndex - 1 が直前に成功したスキルインデックス）を更新
+    const currentReachedIndex = orderIndex - 1;
     if (currentReachedIndex > maxGlobalReachedIndex) {
         maxGlobalReachedIndex = currentReachedIndex;
     }
 
     // 全手順クリアした場合
-    if (orderIdx >= order.length) {
+    if (orderIndex >= order.length) {
         return history;
     }
  
