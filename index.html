@@ -641,7 +641,7 @@ function showResults(solutions, conditions, slotCount) {
 }
 
 // --- URL共有（圧縮処理） ---
-function shareURL() {
+async function shareURL() {
     const data = {
         s: getSlotCount(),
         d: document.getElementById("deckInput").value,
@@ -656,13 +656,15 @@ function shareURL() {
         .replace(/\//g, '_')
         .replace(/=+$/, '');
 
-    const shareURL = `${location.origin}${location.pathname}#s=${compressed}`;
+    const shareableURL = `${location.origin}${location.pathname}#s=${compressed}`;
 
-    navigator.clipboard.writeText(shareURL).then(() => {
-        alert(`共有用URLをコピーしました！（長さ: ${shareURL.length}文字）`);
-    }).catch(() => {
-        prompt("以下のURLをコピーしてください:", shareURL);
-    });
+    try {
+        await navigator.clipboard.writeText(shareableURL);
+        alert(`共有用URLをコピーしました！（長さ: ${shareableURL.length}文字）`);
+    } catch (err) {
+        // クリップボード書き込み失敗時、または権限エラー時のフォールバック
+        prompt("以下のURLをコピーしてください:", shareableURL);
+    }
 }
 
 // --- URL読み込み ---
