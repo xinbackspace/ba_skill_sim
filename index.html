@@ -479,9 +479,12 @@ function search() {
     console.clear();
     console.log("=== 検索処理を開始します ===");
 
+    // 実行開始時に前回のハイライトをクリア
+    clearHighlight();
+
     const slotCount = getSlotCount();
     const deck = getDeck();
-    const order = getOrder();
+    const order = getOrder(); // order は各行の命令配列（Array）
     const conditions = getConditions();
 
     if (deck.length < slotCount) {
@@ -495,6 +498,9 @@ function search() {
         cardNotFound: 0,       // 途中手札に対象カードがなく失敗
         conditionMismatch: 0   // 手順は通ったが指定条件不一致で失敗
     };
+
+    // 全パターンの中で到達できた最大指示インデックス（0始まり、-1は初期状態）
+    let maxReachedIndex = -1;
 
     console.log(`検証候補の総パターン数: ${candidates.length}`);
 
@@ -514,6 +520,13 @@ function search() {
         if (history === null) {
             failureStats.cardNotFound++;
             continue;
+        }
+
+        // 進行できた行数（history[0]は初期状態のため -1、インデックス表記にするためさらに -1）
+        // 例: 3個スキルを使えた場合、history.length は 4 になり、到達インデックスは 2（3行目）
+        const reachedIndex = history.length - 2;
+        if (reachedIndex > maxReachedIndex) {
+            maxReachedIndex = reachedIndex;
         }
 
         let isMatch = true;
@@ -550,7 +563,21 @@ function search() {
             console.log(`解 #${idx + 1}: 初期手札 [${sol.initialSlots.join(', ')}] | 山札 [${sol.initialDeck.join(' -> ')}]`);
         });
     } else {
+        // 到達できた最大行数の計算（1始まりの行番号と指示名を取得）
+        const failedLineNum = maxReachedIndex + 2; // 詰まった行（次に行こうとした行）
+        const failedCardName = order[failedLineNum - 1] || "不明";
+        const lastSuccessLineNum = maxReachedIndex + 1;
+        const lastSuccessCardName = maxReachedIndex >= 0 ? order[maxReachedIndex] : "なし";
+
         console.warn("\n条件を満たす初期配置は見つかりませんでした。");
+        console.log(`【到達点解析】`);
+        console.log(`- 最後に成功した到達点: ${lastSuccessLineNum > 0 ? `${lastSuccessLineNum}行目 (${lastSuccessCardName})` : "なし (1行目で停止)"}`);
+        console.log(`- 全パターンで阻止・失敗した行: ${failedLineNum}行目 (${failedCardName})`);
+
+        // 画面上のtextarea（背後ハイライト）にも失敗行を表示
+        // maxReachedIndex + 1 が詰まった行のインデックス（0始まり）
+        const failedIndexForHighlight = maxReachedIndex < 0 ? 0 : maxReachedIndex + 1;
+        setFailedLineHighlight(failedIndexForHighlight);
     }
 
     showResults(solutions, conditions, slotCount);
