@@ -242,26 +242,15 @@ function getConditions() {
     }).filter(x => x.turn > 0 && x.name);
 }
 
-const cardParseCache = new Map();
-const baseNameCache = new Map();
-
 function parseCard(cardStr) {
-    const cached = cardParseCache.get(cardStr);
-    if (cached) return cached;
-
     // 「→落とし」または「->落とし」の指定チェック
     const isDrop = /(-->|->|→)落とし$/.test(cardStr);
     const cleanStr = cardStr.replace(/(-->|->|→)落とし$/, "");
 
     // Kまたはkのカウント取得に対応
     const match = cleanStr.match(/^(.+?)(?:[Kk](\d*))?$/);
-    if (!match) {
-        const result = { baseName: cleanStr, kCount: 0, isDrop };
-        cardParseCache.set(cardStr, result);
-        baseNameCache.set(cardStr, cleanStr);
-        return result;
-    }
-
+    if (!match) return { baseName: cleanStr, kCount: 0, isDrop };
+    
     const baseName = match[1];
     let kCount = 0;
     if (match[2] !== undefined) {
@@ -269,16 +258,12 @@ function parseCard(cardStr) {
     } else if (/[Kk]$/.test(cleanStr)) {
         kCount = 1;
     }
-
-    const result = { baseName, kCount, isDrop };
-    cardParseCache.set(cardStr, result);
-    baseNameCache.set(cardStr, baseName);
-    return result;
+    
+    return { baseName, kCount, isDrop };
 }
 
 function getBaseName(cardStr) {
-    const cached = baseNameCache.get(cardStr);
-    return cached !== undefined ? cached : parseCard(cardStr).baseName;
+    return parseCard(cardStr).baseName;
 }
 
 function processSubAction(slots, deck, actionToken, turn, debug = true) {
@@ -418,7 +403,14 @@ function processSubAction(slots, deck, actionToken, turn, debug = true) {
     return results;
 }
 
+const failedStateCache = new Set();
+let solveCallCount = 0;
+let solveCacheHitCount = 0;
+function makeStateKey(slots, deck, orderIndex, slotCount) {
+    return orderIndex + "|" + slotCount + "|" + slots.join("\u001f") + "|" + deck.join("\u001f");
+}
 function solve(slots, deck, orderIndex, order, history, slotCount) {
+    solveCallCount++;
     if (orderIndex >= order.length) {
         return history;
     }
@@ -436,6 +428,8 @@ function solve(slots, deck, orderIndex, order, history, slotCount) {
  
     const nextTurn = orderIndex + 1;
     const requested = order[orderIndex];
+    const stateKey = makeStateKey(slots, deck, orderIndex, slotCount);
+    if (failedStateCache.has(stateKey)) { solveCacheHitCount++; return null; }
 
     // 特殊アクション（矢印等）が含まれる場合は processSubAction で分岐処理
     if (requested.includes("->") || requested.includes("→") || requested.includes("!")) {
@@ -453,6 +447,7 @@ function solve(slots, deck, orderIndex, order, history, slotCount) {
             const result = solve(res.slots, res.deck, orderIndex + 1, order, nextHistory, slotCount);
             if (result !== null) return result;
         }
+        failedStateCache.add(stateKey);
         return null;
     }
 
@@ -466,6 +461,7 @@ function solve(slots, deck, orderIndex, order, history, slotCount) {
     }
 
     if (matchingIndices.length === 0) {
+        failedStateCache.add(stateKey);
         return null;
     }
 
@@ -504,6 +500,7 @@ function solve(slots, deck, orderIndex, order, history, slotCount) {
         if (res !== null) return res;
     }
 
+    failedStateCache.add(stateKey);
     return null;
 }
 
@@ -527,90 +524,50 @@ function search() {
     }
 
     const solutions = [];
-    const failureStats = {
-        cardNotFound: 0,
-        conditionMismatch: 0
-    };
-
-    // 最大到達行数をリセット（0手目は初期状態なので -1）
+    const failureStats = { cardNotFound: 0, conditionMismatch: 0 };
     maxGlobalReachedIndex = -1;
+    solveCallCount = 0;
+    solveCacheHitCount = 0;
+    failedStateCache.clear();
 
-    // 元の permutations() と同じ順序で1件ずつ生成し、
-    // 全候補を配列として保持しないことでメモリ使用量を大幅に削減する。
     const firstSkill = getBaseName(order[0]);
-    const used = new Array(deck.length).fill(false);
-    const current = new Array(deck.length);
     let candidateCount = 0;
-
-    function visitPermutation(depth) {
-        if (depth === deck.length) {
+    function visitPermutation(current, remaining) {
+        if (remaining.length === 0) {
             candidateCount++;
-
             const initialSlots = current.slice(0, slotCount);
-
-            // 【枝刈り例1】1手目のカードが初期手札（5スロット）になければ即パス
-            const hasFirstSkill = initialSlots.some(card => getBaseName(card) === firstSkill);
-            if (!hasFirstSkill) {
-                failureStats.cardNotFound++;
-                return;
-            }
-
+            if (!initialSlots.some(card => getBaseName(card) === firstSkill)) { failureStats.cardNotFound++; return; }
             const initialDeck = current.slice(slotCount);
-            const initialHistory = [{
-                turn: 0,
-                use: "初期",
-                slots: [...initialSlots],
-                deck: [...initialDeck]
-            }];
-
+            const initialHistory = [{ turn: 0, use: "初期", slots: [...initialSlots], deck: [...initialDeck] }];
             const history = solve(initialSlots, initialDeck, 0, order, initialHistory, slotCount);
-
-            if (history === null) {
-                failureStats.cardNotFound++;
-                return;
-            }
-
+            if (history === null) { failureStats.cardNotFound++; return; }
             let isMatch = true;
             for (const cond of conditions) {
                 const targetState = history[cond.turn - 1];
-                if (!targetState) {
-                    isMatch = false;
-                    break;
-                }
+                if (!targetState) { isMatch = false; break; }
                 const cardInSlot = targetState.slots[cond.slotIdx];
-                if (!cardInSlot || getBaseName(cardInSlot) !== getBaseName(cond.name)) {
-                    isMatch = false;
-                    break;
-                }
+                if (!cardInSlot || getBaseName(cardInSlot) !== getBaseName(cond.name)) { isMatch = false; break; }
             }
-
-            if (isMatch) {
-                solutions.push({ history, initialSlots, initialDeck });
-            } else {
-                failureStats.conditionMismatch++;
-            }
+            if (isMatch) solutions.push({ history, initialSlots, initialDeck });
+            else failureStats.conditionMismatch++;
             return;
         }
-
-        // 元の permutations() と同じ「残り要素を左から選ぶ」順序。
-        for (let i = 0; i < deck.length; i++) {
-            if (used[i]) continue;
-            used[i] = true;
-            current[depth] = deck[i];
-            visitPermutation(depth + 1);
-            used[i] = false;
+        for (let i=0;i<remaining.length;i++) {
+            current.push(remaining[i]);
+            visitPermutation(current, remaining.slice(0,i).concat(remaining.slice(i+1)));
+            current.pop();
         }
     }
-
-    visitPermutation(0);
-
-    console.log(`検証候補の総パターン数: ${candidateCount}`);
+    visitPermutation([], deck);
 
     console.log("\n================ 検索結果サマリー ================");
     console.log(`全試行パターン数: ${candidateCount}`);
     console.log(`成功（条件達成）: ${solutions.length} 件`);
     console.log(`失敗（進行不能）: ${failureStats.cardNotFound} 件`);
     console.log(`失敗（条件不一致）: ${failureStats.conditionMismatch} 件`);
+    console.log(`solve 呼び出し回数: ${solveCallCount.toLocaleString()}`);
+    console.log(`失敗状態キャッシュヒット: ${solveCacheHitCount.toLocaleString()}`);
+    console.log(`失敗状態キャッシュ件数: ${failedStateCache.size.toLocaleString()}`);
     console.log("=================================================");
 
     if (solutions.length > 0) {
