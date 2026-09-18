@@ -83,7 +83,39 @@ th { background: #eee; }
   <h2 style="margin: 0;">スキル使用順</h2>
   <button onclick="parseTL()" style="padding: 5px 12px; font-size: 14px;">📋 TL整形 (テキスト抽出)</button>
 </div>
-<textarea id="orderInput">ヒマリ
+
+<div class="editor-wrapper" style="position: relative; width: 100%; min-height: 200px;">
+  <!-- 背後のハイライト用表示エリア -->
+  <div id="orderHighlight" style="
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      padding: 8px;
+      font-family: monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow: hidden;
+      color: transparent; /* テキスト自体は透明にし、背景色だけ見せる */
+      pointer-events: none; /* マウス操作を透過してtextareaに届かせる */
+      border: 1px solid transparent;
+  "></div>
+
+  <!-- 入力用textarea -->
+  <textarea id="orderInput" style="
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 200px;
+      padding: 8px;
+      font-family: monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      background: transparent;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+      resize: vertical;
+  ">ヒマリ
 アル
 リオK1
 ネルK1
@@ -99,6 +131,7 @@ th { background: #eee; }
 セイア
 ネル</textarea>
 </div>
+
 
 <div class="box">
 <h2>位置条件の設定</h2>
@@ -678,6 +711,39 @@ function parseTL() {
     }
 
     orderInput.value = extractedSkills.join("\n");
+}
+
+// エラーで全パターン失敗した際に、どこまで実行できたかを画面に表示する処理例
+function handleAllFailed(orderList, lastSuccessIndex) {
+    const errorContainer = document.getElementById("errorMessageContainer") || createErrorContainer();
+    
+    if (lastSuccessIndex === -1) {
+        errorContainer.innerHTML = `⚠️ <b>1行目 (${orderList[0]})</b> で失敗しました。手札または条件を確認してください。`;
+    } else {
+        const failedIndex = lastSuccessIndex + 1;
+        const lastSuccessCard = orderList[lastSuccessIndex];
+        const failedCard = orderList[failedIndex];
+        
+        errorContainer.innerHTML = `
+            ⚠️ <b>${failedIndex + 1}行目 (${failedCard})</b> で失敗しました。<br>
+            直前まで成功した到達点: <b>${lastSuccessIndex + 1}行目 (${lastSuccessCard})</b>
+        `;
+    }
+    errorContainer.style.display = "block";
+}
+
+function highlightFailedLine(failedLineIndex) {
+    const container = document.getElementById("orderInput");
+    const lines = container.innerText.split("\n");
+
+    const html = lines.map((line, idx) => {
+        if (idx === failedLineIndex) {
+            return `<div style="background-color: #ffd2d2; color: #d00000; font-weight: bold;">⚠️ ${line} (ここで失敗)</div>`;
+        }
+        return `<div>${line || "<br>"}</div>`;
+    }).join("");
+
+    container.innerHTML = html;
 }
  
 window.addEventListener("DOMContentLoaded", () => {
