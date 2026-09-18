@@ -518,19 +518,19 @@ function search() {
 
     console.log(`検証候補の総パターン数: ${candidates.length}`);
 
-for (const initial of candidates) {
-    const initialSlots = initial.slice(0, slotCount);
+    for (const initial of candidates) {
+        const initialSlots = initial.slice(0, slotCount);
+     
+        // 【枝刈り例1】1手目のカードが初期手札（5スロット）になければ即パス
+        const firstSkill = getBaseName(order[0]);
+        const hasFirstSkill = initialSlots.some(card => getBaseName(card) === firstSkill);
+        if (!hasFirstSkill) {
+            failureStats.cardNotFound++;
+            continue; // 以降の重い solve() をスキップ
+        } 
  
-    // 【枝刈り例1】1手目のカードが初期手札（5スロット）になければ即パス
-    const firstSkill = getBaseName(order[0]);
-    const hasFirstSkill = initialSlots.some(card => getBaseName(card) === firstSkill);
-    if (!hasFirstSkill) {
-        failureStats.cardNotFound++;
-        continue; // 以降の重い solve() をスキップ
-    } 
- 
-     const initialDeck = initial.slice(slotCount);
-     const initialHistory = [{
+       const initialDeck = initial.slice(slotCount);
+       const initialHistory = [{
             turn: 0,
             use: "初期",
             slots: [...initialSlots],
