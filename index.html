@@ -87,7 +87,7 @@ th { background: #eee; }
 
 <div class="editor-wrapper" style="position: relative; width: 100%; min-height: 200px;">
   <!-- 背後のハイライト用表示エリア -->
-  <div id="orderHighlight" style="
+  <div id="orderHighlight" aria-hidden="true" style="
       position: absolute;
       top: 0; left: 0; right: 0; bottom: 0;
       padding: 8px;
@@ -96,14 +96,16 @@ th { background: #eee; }
       line-height: 1.5;
       white-space: pre-wrap;
       word-wrap: break-word;
-      overflow: hidden;
-      color: transparent; /* テキスト自体は透明にし、背景色だけ見せる */
-      pointer-events: none; /* マウス操作を透過してtextareaに届かせる */
+      overflow-y: auto;
+      color: transparent;
+      pointer-events: none;
       border: 1px solid transparent;
+      box-sizing: border-box;
+      z-index: 1;
   "></div>
 
   <!-- 入力用textarea -->
-  <textarea id="orderInput" style="
+  <textarea id="orderInput" onscroll="syncScroll()" style="
       position: relative;
       width: 100%;
       height: 100%;
@@ -112,10 +114,11 @@ th { background: #eee; }
       font-family: monospace;
       font-size: 14px;
       line-height: 1.5;
-      background: transparent;
+      background: transparent; /* 背景を透明にして下のハイライトを見せる */
       border: 1px solid #ccc;
       box-sizing: border-box;
       resize: vertical;
+      z-index: 2;
   ">ヒマリ
 アル
 リオK1
@@ -714,32 +717,49 @@ function parseTL() {
     orderInput.value = extractedSkills.join("\n");
 }
 
-// 失敗した行のインデックス（0始まり）を渡してハイライトする関数
-function setFailedLineHighlight(failedIndex) {
-    const input = document.getElementById("orderInput");
-    const highlight = document.getElementById("orderHighlight");
-    
-    const lines = input.value.split("\n");
-    
-    // 該当行だけ背景赤のspanで囲み、それ以外は透明なテキストとして配置
-    const html = lines.map((line, idx) => {
-        if (idx === failedIndex) {
-            return `<div style="background-color: #ffcccc; color: transparent;">${escapeHtml(line) || "&nbsp;"} ← 失敗</div>`;
-        }
-        return `<div>${escapeHtml(line) || "&nbsp;"}</div>`;
-    }).join("");
-    
-    highlight.innerHTML = html;
-}
-
-// エラーが解消されたらクリアする関数
-function clearHighlight() {
-    document.getElementById("orderHighlight").innerHTML = "";
-}
-
+// エラー文字の退避用（HTMLエスケープ）
 function escapeHtml(str) {
     return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
+// 失敗した行のインデックス（0始まり）を受け取りハイライト
+function setFailedLineHighlight(failedIndex) {
+    const input = document.getElementById("orderInput");
+    const highlight = document.getElementById("orderHighlight");
+    if (!input || !highlight) return;
+
+    const lines = input.value.split("\n");
+
+    const html = lines.map((line, idx) => {
+        const safeLine = escapeHtml(line) || "&nbsp;";
+        if (idx === failedIndex) {
+            // 背景を赤くし、右側に目印を表示
+            return `<div style="background-color: #ffcccc; color: transparent; font-weight: bold;">${safeLine}<span style="color: red; float: right; font-weight: bold; font-size: 12px;">← 失敗</span></div>`;
+        }
+        return `<div>${safeLine}</div>`;
+    }).join("");
+
+    highlight.innerHTML = html;
+    syncScroll(); // スクロール位置を同期
+}
+
+// ハイライト消去
+function clearHighlight() {
+    const highlight = document.getElementById("orderHighlight");
+    if (highlight) highlight.innerHTML = "";
+}
+
+// textarea と ハイライト層のスクロール位置を同期させる
+function syncScroll() {
+    const input = document.getElementById("orderInput");
+    const highlight = document.getElementById("orderHighlight");
+    if (input && highlight) {
+        highlight.scrollTop = input.scrollTop;
+    }
+}
+
+ // ユーザーが入力・編集を開始したら自動でハイライトを消す
+document.getElementById("orderInput")?.addEventListener("input", clearHighlight);
  
 window.addEventListener("DOMContentLoaded", () => {
     loadFromURLHash();
