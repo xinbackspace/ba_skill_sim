@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>スキル順シミュレーター</title>
+<title>ブルアカスキル順シミュレーター</title>
 <style>
 body { font-family: sans-serif; max-width: 950px; margin: 30px auto; padding: 0 15px; background: #f5f5f5; }
 .box { background: white; padding: 20px; margin-bottom: 15px; border-radius: 10px; }
@@ -24,10 +24,10 @@ th { background: #eee; }
 </head>
 <body>
 
-<h1>スキル順シミュレーター</h1>
+<h1>ブルアカスキル順シミュレーター</h1>
 
 <div class="box">
-<b>【書き方・基本ルール】</b><br><br>
+<b>【記入ルール】</b><br><br>
 
 <b>① 通常使用</b><br>
 キャラクター名のみを入力します。<br>
@@ -62,7 +62,7 @@ th { background: #eee; }
 </div>
 
 <div class="box">
-<h2>基本設定</h2>
+<h2 style="margin: 0;">基本設定</h2>
 <div class="setting-row">
 <label for="slotCount"><b>スキル枠数:</b></label>
 <input type="number" id="slotCount" value="3" min="1" max="10" style="width: 70px;" onchange="updateConditionSlotOptions()">
@@ -71,7 +71,7 @@ th { background: #eee; }
 </div>
 
 <div class="box">
-<h2>デッキ</h2>
+<h2 style="margin: 0;">デッキ</h2>
 <textarea id="deckInput">ヒマリ
 アル
 リオ
