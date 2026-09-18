@@ -191,68 +191,105 @@ function getBaseName(cardStr) {
     return parseCard(cardStr).baseName;
 }
 
-function processSubAction(slots, deck, actionToken, turn, debug) {
+function processSubAction(slots, deck, actionToken, turn, debug = true) {
     actionToken = actionToken.trim();
-    if (!actionToken) return [{ slots, deck }];
+    if (!actionToken) return [];
 
-    if (debug) console.log(`[Turn ${turn}] 処理中アクション: "${actionToken}" | 手札: [${slots.join(', ')}] | 山札: [${deck.join(' -> ')}]`);
+    const isDrop = /(-->|->|→)落とし$/.test(actionToken);
+    const cleanToken = actionToken.replace(/(-->|->|→)落とし$/, "");
 
-    // 1. 先頭が 「->」 または 「→」 の場合（例：→ドヒナK3）
-    if (actionToken.startsWith("->") || actionToken.startsWith("→")) {
-        const targetToken = actionToken.replace(/^->|^→/, "").trim();
-        if (!targetToken) return [{ slots, deck }];
-
-        let currentSlots = [...slots];
-        const targetBase = getBaseName(targetToken);
-        const handTargetIdx = currentSlots.findIndex(s => s !== "-" && getBaseName(s) === targetBase);
-        
-        if (handTargetIdx === -1) {
-            if (debug) console.warn(`[Turn ${turn}] 失敗: 手札変更対象 "${targetBase}" が手札に見つかりません。`);
-            return [];
-        }
-
-        currentSlots[handTargetIdx] = targetToken;
-        if (debug) console.log(`[Turn ${turn}] 手札更新成功: 枠${handTargetIdx + 1} の "${targetBase}" を "${targetToken}" に変更`);
-
-        return [{ slots: currentSlots, deck: [...deck] }];
-    }
-
-    // 2. 矢印を含む組み合わせパターン（例：リオ→ドヒナK2）
-    if (actionToken.includes("->") || actionToken.includes("→")) {
-        const parts = actionToken.split(/->|→/);
-        const leftToken = parts[0].trim();
-        const rightToken = parts[1].trim();
+    // 矢印（-> または →）が含まれる場合
+    if (cleanToken.includes("->") || cleanToken.includes("→")) {
+        const parts = cleanToken.split(/->|→/);
+        const rawLeft = parts[0].trim();
+        const rawRight = parts[1].trim();
 
         let currentSlots = [...slots];
         let currentDeck = [...deck];
 
-        const reqBase = getBaseName(leftToken);
-        const foundIdx = currentSlots.findIndex(s => s !== "-" && getBaseName(s) === reqBase);
-        if (foundIdx === -1) {
-            if (debug) console.warn(`[Turn ${turn}] 失敗: 左側カード "${reqBase}" が手札にありません。`);
-            return [];
-        }
+        // --- パターン2: 左側が空（例: →ヒナ） ---
+        if (!rawLeft) {
+            const targetBase = getBaseName(rawRight);
+            const handIdx = currentSlots.findIndex(s => s !== "-" && getBaseName(s) === targetBase);
 
-        currentDeck.push(reqBase);
-        currentSlots[foundIdx] = "-";
-
-        if (rightToken) {
-            const targetBase = getBaseName(rightToken);
-            const deckTargetIdx = currentDeck.findIndex(d => getBaseName(d) === targetBase);
-            if (deckTargetIdx === -1) {
-                if (debug) console.warn(`[Turn ${turn}] 失敗: 右側カード "${targetBase}" が山札にありません。`);
+            if (handIdx === -1) {
+                if (debug) console.warn(`[Turn ${turn}] エラー: 手札に対象カード "${targetBase}" が見つかりません。`);
                 return [];
             }
 
-            currentDeck.splice(deckTargetIdx, 1);
-            currentSlots[foundIdx] = rightToken;
+            currentSlots[handIdx] = rawRight;
+            if (debug) console.log(`[Turn ${turn}] 手札更新成功: 枠${handIdx + 1} の "${targetBase}" を "${rawRight}" に更新`);
+            return [{ slots: currentSlots, deck: currentDeck }];
         }
 
+        // --- パターン1 & 3: 左側が存在する（例: リオ→ヒナ / リオ!→ヒナ） ---
+        const isForceDeck = rawLeft.endsWith("!");
+        const leftToken = isForceDeck ? rawLeft.slice(0, -1).trim() : rawLeft;
+        const leftBase = getBaseName(leftToken);
+
+        // 左側カードの使用（手札から消費）
+        const leftIdx = currentSlots.findIndex(s => s !== "-" && getBaseName(s) === leftBase);
+        if (leftIdx === -1) {
+            if (debug) console.warn(`[Turn ${turn}] 失敗: 左側カード "${leftBase}" が手札にありません。`);
+            return [];
+        }
+
+        // 左側カードを山札末尾へ送る（落とし指定がなければ）
+        const leftParsed = parseCard(leftToken);
+        if (!leftParsed.isDrop && !isDrop) {
+            currentDeck.push(leftBase);
+        }
+        currentSlots[leftIdx] = "-";
+
+        if (!rawRight) {
+            // 右側指定がない場合は通常の山札引き
+            currentSlots[leftIdx] = currentDeck.shift() ?? "-";
+            return [{ slots: currentSlots, deck: currentDeck }];
+        }
+
+        const rightBase = getBaseName(rawRight);
+        const handRightIdx = currentSlots.findIndex(s => s !== "-" && getBaseName(s) === rightBase);
+
+        // パターン3: 強制山札呼び出し（例: リオ!→ヒナ）
+        if (isForceDeck) {
+            if (handRightIdx !== -1) {
+                if (debug) console.warn(`[Turn ${turn}] エラー: "${rightBase}" が手札に存在するため "!" 指定に違反します。`);
+                return [];
+            }
+            const deckRightIdx = currentDeck.findIndex(d => getBaseName(d) === rightBase);
+            if (deckRightIdx === -1) {
+                if (debug) console.warn(`[Turn ${turn}] 失敗: "${rightBase}" が山札に存在しません。`);
+                return [];
+            }
+            currentDeck.splice(deckRightIdx, 1);
+            currentSlots[leftIdx] = rawRight;
+            if (debug) console.log(`[Turn ${turn}] 山札から強制呼び出し: 枠${leftIdx + 1} に "${rawRight}" を配置`);
+            return [{ slots: currentSlots, deck: currentDeck }];
+        }
+
+        // パターン1: 通常矢印（例: リオ→ヒナ）
+        // 優先度1: 手札にあれば強制更新
+        if (handRightIdx !== -1) {
+            currentSlots[handRightIdx] = rawRight;
+            currentSlots[leftIdx] = currentDeck.shift() ?? "-"; // 空いた左側枠は通常ドロー
+            if (debug) console.log(`[Turn ${turn}] 手札更新: 枠${handRightIdx + 1} の "${rightBase}" を "${rawRight}" に更新`);
+            return [{ slots: currentSlots, deck: currentDeck }];
+        }
+
+        // 優先度2: 手札になければ山札から呼び出し
+        const deckRightIdx = currentDeck.findIndex(d => getBaseName(d) === rightBase);
+        if (deckRightIdx === -1) {
+            if (debug) console.warn(`[Turn ${turn}] 失敗: "${rightBase}" が手札にも山札にもありません。`);
+            return [];
+        }
+        currentDeck.splice(deckRightIdx, 1);
+        currentSlots[leftIdx] = rawRight;
+        if (debug) console.log(`[Turn ${turn}] 山札から呼び出し: 枠${leftIdx + 1} に "${rawRight}" を配置`);
         return [{ slots: currentSlots, deck: currentDeck }];
     }
 
-    // 3. 通常の単一カード使用処理
-    const reqBase = getBaseName(actionToken);
+    // --- 通常使用処理（矢印を含まない場合） ---
+    const reqBase = getBaseName(cleanToken);
     const matchingIndices = [];
     for (let i = 0; i < slots.length; i++) {
         if (getBaseName(slots[i]) === reqBase) {
@@ -269,17 +306,21 @@ function processSubAction(slots, deck, actionToken, turn, debug) {
     for (const idx of matchingIndices) {
         const nextSlots = [...slots];
         const nextDeck = [...deck];
-
+        const currentCard = nextSlots[idx];
         const reqParsed = parseCard(actionToken);
+        const currentParsed = parseCard(currentCard);
 
-        if (reqParsed.kCount > 0) {
-            nextSlots[idx] = reqParsed.baseName;
-            if (debug) console.log(`[Turn ${turn}] K付使用: 枠${idx + 1} の "${reqParsed.baseName}" を保持（消費なし）`);
+        let activeKCount = reqParsed.kCount > 0 ? reqParsed.kCount : currentParsed.kCount;
+
+        if (activeKCount > 0) {
+            const nextKCount = activeKCount - 1;
+            nextSlots[idx] = nextKCount > 0 ? `${currentParsed.baseName}K${nextKCount}` : currentParsed.baseName;
         } else {
-            const returnedCard = getBaseName(nextSlots[idx]);
-            nextDeck.push(returnedCard);
-            nextSlots[idx] = "-";
-            if (debug) console.log(`[Turn ${turn}] カード消費: 枠${idx + 1} の "${returnedCard}" を山札末尾へ移動`);
+            const returnedCard = currentParsed.baseName;
+            if (!reqParsed.isDrop && !currentParsed.isDrop && !isDrop) {
+                nextDeck.push(returnedCard);
+            }
+            nextSlots[idx] = nextDeck.shift() ?? "-";
         }
         results.push({ slots: nextSlots, deck: nextDeck });
     }
@@ -294,8 +335,28 @@ function solve(slots, deck, orderIndex, order, history, slotCount) {
 
     const nextTurn = orderIndex + 1;
     const requested = order[orderIndex];
-    const reqBase = getBaseName(requested);
 
+    // 特殊アクション（矢印等）が含まれる場合は processSubAction で分岐処理
+    if (requested.includes("->") || requested.includes("→") || requested.includes("!")) {
+        const subResults = processSubAction(slots, deck, requested, nextTurn, false);
+        for (const res of subResults) {
+            const nextHistory = [
+                ...history,
+                {
+                    turn: nextTurn,
+                    use: requested,
+                    slots: [...res.slots],
+                    deck: [...res.deck]
+                }
+            ];
+            const result = solve(res.slots, res.deck, orderIndex + 1, order, nextHistory, slotCount);
+            if (result !== null) return result;
+        }
+        return null;
+    }
+
+    // 通常使用処理
+    const reqBase = getBaseName(requested);
     const matchingIndices = [];
     for (let i = 0; i < slots.length; i++) {
         if (getBaseName(slots[i]) === reqBase) {
@@ -319,20 +380,12 @@ function solve(slots, deck, orderIndex, order, history, slotCount) {
 
         if (activeKCount > 0) {
             const nextKCount = activeKCount - 1;
-            if (nextKCount > 0) {
-                nextSlots[idx] = `${currentParsed.baseName}K${nextKCount}`;
-            } else {
-                nextSlots[idx] = currentParsed.baseName;
-            }
+            nextSlots[idx] = nextKCount > 0 ? `${currentParsed.baseName}K${nextKCount}` : currentParsed.baseName;
         } else {
             const returnedCard = currentParsed.baseName;
-
-            // 「落とし」指定がない場合のみ山札の末尾へ戻す
             if (!reqParsed.isDrop && !currentParsed.isDrop) {
                 nextDeck.push(returnedCard);
             }
-
-            // スロットには山札の先頭から補充（山札が空なら "-"）
             nextSlots[idx] = nextDeck.shift() ?? "-";
         }
 
