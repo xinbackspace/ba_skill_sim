@@ -799,6 +799,12 @@ function syncScroll() {
  // ユーザーが入力・編集を開始したら自動でハイライトを消す
 document.getElementById("orderInput")?.addEventListener("input", clearHighlight);
  
+// URLハッシュが変わった時（記入例リンク等のクリック時）に自動で読み込む
+window.addEventListener("hashchange", () => {
+    loadFromURLHash();
+});
+
+// ページ初開時にも読み込みを実行
 window.addEventListener("DOMContentLoaded", () => {
     loadFromURLHash();
 });
