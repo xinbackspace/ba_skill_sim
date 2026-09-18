@@ -165,15 +165,22 @@ function getConditions() {
 }
 
 function parseCard(cardStr) {
-    const match = cardStr.match(/^(.+?)(?:C(\d*))?$/);
-    if (!match) return { baseName: cardStr, cCount: 0 };
+    // 「→落とし」または「->落とし」の指定チェック
+    const isDrop = /(-->|->|→)落とし$/.test(cardStr);
+    const cleanStr = cardStr.replace(/(-->|->|→)落とし$/, "");
+
+    const match = cleanStr.match(/^(.+?)(?:C(\d*))?$/);
+    if (!match) return { baseName: cleanStr, cCount: 0, isDrop };
+    
     const baseName = match[1];
+    let cCount = 0;
     if (match[2] !== undefined) {
-        return { baseName, cCount: match[2] === "" ? 1 : parseInt(match[2], 10) };
-    } else if (cardStr.endsWith("C")) {
-        return { baseName, cCount: 1 };
+        cCount = match[2] === "" ? 1 : parseInt(match[2], 10);
+    } else if (cleanStr.endsWith("C")) {
+        cCount = 1;
     }
-    return { baseName, cCount: 0 };
+    
+    return { baseName, cCount, isDrop };
 }
 
 function getBaseName(cardStr) {
@@ -306,7 +313,7 @@ function solve(slots, deck, orderIndex, order, history, slotCount) {
 
         let activeCCount = reqParsed.cCount > 0 ? reqParsed.cCount : currentParsed.cCount;
 
-        if (activeCCount > 0) {
+    if (activeCCount > 0) {
             const nextCCount = activeCCount - 1;
             if (nextCCount > 0) {
                 nextSlots[idx] = `${currentParsed.baseName}C${nextCCount}`;
@@ -315,7 +322,13 @@ function solve(slots, deck, orderIndex, order, history, slotCount) {
             }
         } else {
             const returnedCard = currentParsed.baseName;
-            nextDeck.push(returnedCard);
+
+            // 「落とし」指定がない場合のみ山札の末尾へ戻す
+            if (!reqParsed.isDrop && !currentParsed.isDrop) {
+                nextDeck.push(returnedCard);
+            }
+
+            // スロットには山札の先頭から補充（山札が空なら "-"）
             nextSlots[idx] = nextDeck.shift() ?? "-";
         }
 
