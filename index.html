@@ -713,37 +713,31 @@ function parseTL() {
     orderInput.value = extractedSkills.join("\n");
 }
 
-// エラーで全パターン失敗した際に、どこまで実行できたかを画面に表示する処理例
-function handleAllFailed(orderList, lastSuccessIndex) {
-    const errorContainer = document.getElementById("errorMessageContainer") || createErrorContainer();
+// 失敗した行のインデックス（0始まり）を渡してハイライトする関数
+function setFailedLineHighlight(failedIndex) {
+    const input = document.getElementById("orderInput");
+    const highlight = document.getElementById("orderHighlight");
     
-    if (lastSuccessIndex === -1) {
-        errorContainer.innerHTML = `⚠️ <b>1行目 (${orderList[0]})</b> で失敗しました。手札または条件を確認してください。`;
-    } else {
-        const failedIndex = lastSuccessIndex + 1;
-        const lastSuccessCard = orderList[lastSuccessIndex];
-        const failedCard = orderList[failedIndex];
-        
-        errorContainer.innerHTML = `
-            ⚠️ <b>${failedIndex + 1}行目 (${failedCard})</b> で失敗しました。<br>
-            直前まで成功した到達点: <b>${lastSuccessIndex + 1}行目 (${lastSuccessCard})</b>
-        `;
-    }
-    errorContainer.style.display = "block";
+    const lines = input.value.split("\n");
+    
+    // 該当行だけ背景赤のspanで囲み、それ以外は透明なテキストとして配置
+    const html = lines.map((line, idx) => {
+        if (idx === failedIndex) {
+            return `<div style="background-color: #ffcccc; color: transparent;">${escapeHtml(line) || "&nbsp;"} ← 失敗</div>`;
+        }
+        return `<div>${escapeHtml(line) || "&nbsp;"}</div>`;
+    }).join("");
+    
+    highlight.innerHTML = html;
 }
 
-function highlightFailedLine(failedLineIndex) {
-    const container = document.getElementById("orderInput");
-    const lines = container.innerText.split("\n");
+// エラーが解消されたらクリアする関数
+function clearHighlight() {
+    document.getElementById("orderHighlight").innerHTML = "";
+}
 
-    const html = lines.map((line, idx) => {
-        if (idx === failedLineIndex) {
-            return `<div style="background-color: #ffd2d2; color: #d00000; font-weight: bold;">⚠️ ${line} (ここで失敗)</div>`;
-        }
-        return `<div>${line || "<br>"}</div>`;
-    }).join("");
-
-    container.innerHTML = html;
+function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
  
 window.addEventListener("DOMContentLoaded", () => {
