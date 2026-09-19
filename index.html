@@ -167,8 +167,13 @@ function addCondition(turn = "", name = "", slotIdx = 0) {
     for (let i = 0; i < slotCount; i++) {
         options += `<option value="${i}" ${i === slotIdx ? "selected" : ""}>枠${i + 1}</option>`;
     }
+
+    // ユニークなIDを生成して datalist と紐付け
+    const listId = "turn-list-" + Math.random().toString(36).substring(2, 9);
+
     div.innerHTML = `
-        <input type="number" class="condition-turn" placeholder="手数" min="1" value="${turn}" style="width: 70px;">
+        <input type="text" list="${listId}" class="condition-turn" placeholder="手数" value="${turn}" style="width: 70px;" oninput="onTurnInput(this)">
+        <datalist id="${listId}"></datalist>
         <span>手目の使用直前：</span>
         <input type="text" class="condition-name" placeholder="キャラクター名" value="${name}" style="width: 120px;">
         <span>が</span>
@@ -177,8 +182,51 @@ function addCondition(turn = "", name = "", slotIdx = 0) {
         <button onclick="this.parentElement.remove()">削除</button>
     `;
     document.getElementById("conditions").appendChild(div);
+
+    // datalist に手番の候補を自動挿入
+    const datalist = div.querySelector(`#${listId}`);
+    updateTurnDatalist(datalist);
+}
+// 手番のドロップダウン候補（datalist）を生成
+function updateTurnDatalist(datalistEl) {
+    const deck = getDeckArray(); // 既存のデッキ取得処理
+    datalistEl.innerHTML = "";
+    
+    // デッキ長に応じた手番候補（例: 20手分）を追加
+    const maxTurns = Math.max(deck.length * 3, 20);
+    for (let i = 1; i <= maxTurns; i++) {
+        const opt = document.createElement("option");
+        opt.value = i;
+        datalistEl.appendChild(opt);
+    }
 }
 
+// 手数が入力された際、デッキからキャラ名を自動割り当て
+function onTurnInput(inputEl) {
+    const turnVal = parseInt(inputEl.value, 10);
+    const div = inputEl.parentElement;
+    const nameInput = div.querySelector(".condition-name");
+
+    if (isNaN(turnVal) || turnVal < 1) return;
+
+    const deck = getDeckArray();
+    if (deck.length > 0) {
+        // 手番に対応するカードを循環取得 (1-indexed)
+        const cardIndex = (turnVal - 1) % deck.length;
+        const autoName = getBaseName(deck[cardIndex]);
+
+        if (autoName) {
+            nameInput.value = autoName;
+
+            // アラートではなく、入力欄が一瞬光るだけの軽いフィードバック
+            nameInput.style.transition = "background-color 0.2s";
+            nameInput.style.backgroundColor = "#e3f2fd";
+            setTimeout(() => {
+                nameInput.style.backgroundColor = "";
+            }, 500);
+        }
+    }
+}
 function updateConditionSlotOptions() {
     const slotCount = getSlotCount();
     const selects = document.querySelectorAll(".condition-slot");
@@ -798,7 +846,13 @@ function syncScroll() {
 
  // ユーザーが入力・編集を開始したら自動でハイライトを消す
 document.getElementById("orderInput")?.addEventListener("input", clearHighlight);
- 
+// TL（デッキ）入力欄が変更されたら、既存のすべてのdatalistを更新する
+document.getElementById("deckInput").addEventListener("input", () => {
+    document.querySelectorAll("datalist[id^='turn-list-']").forEach(datalist => {
+        updateTurnDatalist(datalist);
+    });
+});
+  
 // URLハッシュが変わった時（記入例リンク等のクリック時）に自動で読み込む
 window.addEventListener("hashchange", () => {
     loadFromURLHash();
