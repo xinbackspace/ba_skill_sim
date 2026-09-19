@@ -189,7 +189,7 @@ function addCondition(turn = "", name = "", slotIdx = 0) {
 }
 // 手番のドロップダウン候補（datalist）を生成
 function updateTurnDatalist(datalistEl) {
-    const deck = getDeckArray(); // 既存のデッキ取得処理
+    const deck = getDeck(); // 既存のデッキ取得処理
     datalistEl.innerHTML = "";
     
     // デッキ長に応じた手番候補（例: 20手分）を追加
@@ -209,7 +209,7 @@ function onTurnInput(inputEl) {
 
     if (isNaN(turnVal) || turnVal < 1) return;
 
-    const deck = getDeckArray();
+    const deck = getDeck();
     if (deck.length > 0) {
         // 手番に対応するカードを循環取得 (1-indexed)
         const cardIndex = (turnVal - 1) % deck.length;
