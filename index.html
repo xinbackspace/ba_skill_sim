@@ -764,6 +764,11 @@ function parseTL() {
     // デッキに登録されているキャラクターのベース名一覧を取得
     const deckBases = getDeck().map(c => getBaseName(c));
 
+    // TL内に「cキャラ」または「キャラc」（大文字・全角含む）が存在するか事前チェック
+    // ※数字を含まない「c/C/ｃ/Ｃ + キャラ名」または「キャラ名 + c/C/ｃ/Ｃ」
+    const copyPattern = /([cCｃＣ][^\d\s,、()（）]+|[^\d\s,、()（）]+[cCｃＣ])/;
+    const hasCopyNotation = copyPattern.test(rawText);
+
     const lines = rawText.split("\n");
     const extractedSkills = [];
 
@@ -774,10 +779,10 @@ function parseTL() {
         // 1. タイム表記 (00:00.000 や 0:00) を削除
         text = text.replace(/\b\d{1,2}:\d{2}(?:\.\d{1,3})?\b/g, "");
 
-        // 2. コスト表記 (3c, c3, 10c など) を削除
-        text = text.replace(/\b\d+c\b/gi, "").replace(/\bc\d+\b/gi, "");
+        // 2. コスト表記 (3c, c3, 10c など) を削除（数字がつくもののみ消去し、cキャラ/キャラc を保護）
+        text = text.replace(/\b\d+[cCｃＣ]\b/g, "").replace(/\b[cCｃＣ]\d+\b/g, "");
 
-        // 3. （）や()で囲まれた補足テキストを削除 (例: リオ（ユウカ） -> リオ)
+        // 3. （）や()で囲まれた補足テキストを削除
         text = text.replace(/（[^）]*）|\([^)]*\)/g, "");
 
         // 4. キャラクター名の前につく「即」を削除
@@ -787,20 +792,57 @@ function parseTL() {
         const tokens = text.split(/[,、\s]+/);
 
         tokens.forEach(token => {
-            const trimmed = token.trim();
+            let trimmed = token.trim();
             if (!trimmed) return;
 
-            // トークンのベース名（Kカウントや落とし等の記号を除いた部分）
+            // コピー表記（cアル, アルc 等）の判定と除去（大文字全角対応）
+            let isCopyTarget = false;
+            const cMatch = trimmed.match(/^([cCｃＣ])(.+)$/) || trimmed.match(/^(.+)([cCｃＣ])$/);
+            
+            if (cMatch) {
+                // cを除去した純粋なキャラ名を取得
+                const candidateName = cMatch[1].length === 1 && /[cCｃＣ]/.test(cMatch[1]) ? cMatch[2] : cMatch[1];
+                // 数字でないキャラ名であればコピー指定とみなす
+                if (isNaN(candidateName)) {
+                    trimmed = candidateName;
+                    isCopyTarget = true;
+                }
+            }
+
+            // トークンのベース名取得
             const base = getBaseName(trimmed);
 
-            // デッキ内のキャラ名に含まれるか、またはデッキのいずれかのキャラ名がトークンに含まれているか判定
-            const matchedDeckChar = deckBases.find(deckName => 
-                base === deckName || (deckName && base.includes(deckName))
-            );
+            // デッキ内のキャラ名との判定（完全一致を優先し、異名キャラとの誤一致を防止）
+            const matchedDeckChar = deckBases.find(deckName => {
+                if (base === deckName) return true;
+                // 部分一致は、デッキ名が単体でトークンに含まれ、かつ「リオ」などの短名で別キャラ（臨戦リオ等）を誤検知しない場合のみ
+                if (deckName && base.includes(deckName)) {
+                    // 「リオ」の場合、完全一致でなければ別キャラ（臨戦リオ等）とみなして弾く
+                    if (deckName === "リオ" && base !== "リオ") return false;
+                    return true;
+                }
+                return false;
+            });
 
             if (matchedDeckChar) {
-                // デッキキャラと一致した場合、元の記号（K2等）を維持しつつ基本名を補正するか、そのまま抽出
-                extractedSkills.push(trimmed);
+                // cキャラ / キャラc の位置 -> リオへ変換
+                if (isCopyTarget) {
+                    extractedSkills.push("リオ");
+                } 
+                // コピー表記がTL内に存在し、かつ対象が「純粋なリオ」の場合 -> リオK（リオK1）へ変換
+                else if (hasCopyNotation && base === "リオ") {
+                    // すでに K や K1 等の指定がなければ リオK に補正
+                    const parsed = parseCard(trimmed);
+                    if (parsed.kCount === 0) {
+                        extractedSkills.push("リオK");
+                    } else {
+                        extractedSkills.push(trimmed);
+                    }
+                } 
+                // それ以外の通常のキャラ・記号表記
+                else {
+                    extractedSkills.push(trimmed);
+                }
             }
         });
     });
