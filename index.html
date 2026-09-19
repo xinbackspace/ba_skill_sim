@@ -189,11 +189,11 @@ function addCondition(turn = "", name = "", slotIdx = 0) {
 }
 // 手番のドロップダウン候補（datalist）を生成
 function updateTurnDatalist(datalistEl) {
-    const deck = getDeck(); // 既存のデッキ取得処理
+    const order = getOrder(); // スキル使用順（TL）の配列を取得
     datalistEl.innerHTML = "";
     
-    // デッキ長に応じた手番候補（例: 20手分）を追加
-    const maxTurns = Math.max(deck.length * 3, 20);
+    // スキル使用順の行数分（または最低20個）手番候補を作成
+    const maxTurns = Math.max(order.length, 20);
     for (let i = 1; i <= maxTurns; i++) {
         const opt = document.createElement("option");
         opt.value = i;
@@ -209,16 +209,17 @@ function onTurnInput(inputEl) {
 
     if (isNaN(turnVal) || turnVal < 1) return;
 
-    const deck = getDeck();
-    if (deck.length > 0) {
-        // 手番に対応するカードを循環取得 (1-indexed)
-        const cardIndex = (turnVal - 1) % deck.length;
-        const autoName = getBaseName(deck[cardIndex]);
+    const order = getOrder(); // スキル使用順（TL）を取得
+    
+    // 入力された手数（1-indexed）がスキル使用順の行数内にあるか確認
+    if (turnVal <= order.length) {
+        // N手目の文字列（例: "リオK1", "ネル" など）をそのまま取得
+        const rawName = order[turnVal - 1];
 
-        if (autoName) {
-            nameInput.value = autoName;
+        if (rawName) {
+            nameInput.value = rawName;
 
-            // アラートではなく、入力欄が一瞬光るだけの軽いフィードバック
+            // 青く光る控えめなフィードバック
             nameInput.style.transition = "background-color 0.2s";
             nameInput.style.backgroundColor = "#e3f2fd";
             setTimeout(() => {
@@ -227,6 +228,7 @@ function onTurnInput(inputEl) {
         }
     }
 }
+  
 function updateConditionSlotOptions() {
     const slotCount = getSlotCount();
     const selects = document.querySelectorAll(".condition-slot");
@@ -846,8 +848,8 @@ function syncScroll() {
 
  // ユーザーが入力・編集を開始したら自動でハイライトを消す
 document.getElementById("orderInput")?.addEventListener("input", clearHighlight);
-// TL（デッキ）入力欄が変更されたら、既存のすべてのdatalistを更新する
-document.getElementById("deckInput").addEventListener("input", () => {
+// スキル使用順（TL）が変更されたら既存のdatalistを更新するイベントリスナー
+document.getElementById("orderInput")?.addEventListener("input", () => {
     document.querySelectorAll("datalist[id^='turn-list-']").forEach(datalist => {
         updateTurnDatalist(datalist);
     });
