@@ -102,7 +102,9 @@ th { background: #eee; }
   <h2 style="margin: 0;">スキル使用順</h2>
   <button onclick="parseTL()" style="padding: 5px 12px; font-size: 14px;">📋TLからデッキのキャラを抽出（確認推奨）</button>
 </div>
-
+<div id="tlWarningNotice" style="display: none; margin-top: 8px; padding: 8px 12px; background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 4px; color: #856404; font-size: 13px;">
+  ⚠️ **確認**: キープ状態の維持・解除を行うキャラ（ドレスヒナ、制服ネル、トキ等）が含まれています。TL抽出結果と実際の使用挙動（K表記等）に不整合がないかご確認ください。
+</div>
 <div class="editor-wrapper" style="position: relative; width: 100%; min-height: 200px;">
   <!-- 背後のハイライト用表示エリア -->
   <div id="orderHighlight" aria-hidden="true" style="
@@ -758,16 +760,22 @@ function loadFromURLHash() {
 
 function parseTL() {
     const orderInput = document.getElementById("orderInput");
+    const warningNotice = document.getElementById("tlWarningNotice");
     const rawText = orderInput.value;
     if (!rawText.trim()) return;
 
     // デッキに登録されているキャラクターのベース名一覧を取得
     const deckBases = getDeck().map(c => getBaseName(c));
 
-    // TL内に「cキャラ」または「キャラc」（大文字・全角含む）が存在するか事前チェック
-    // ※数字を含まない「c/C/ｃ/Ｃ + キャラ名」または「キャラ名 + c/C/ｃ/Ｃ」
+    // TL内に「cキャラ」または「キャラc」が存在するか事前チェック
     const copyPattern = /([cCｃＣ][^\d\s,、()（）]+|[^\d\s,、()（）]+[cCｃＣ])/;
     const hasCopyNotation = copyPattern.test(rawText);
+
+    // 水着イブキ（水イブキ等）の初回出現フラグ
+    let isFirstIbuki = true;
+
+    // 特殊挙動キャラ（ドレスヒナ・制服ネル・純粋なトキ）の検知フラグ
+    let hasSpecialKeepChar = false;
 
     const lines = rawText.split("\n");
     const extractedSkills = [];
@@ -776,48 +784,60 @@ function parseTL() {
         let text = line.trim();
         if (!text) return;
 
-        // 1. タイム表記 (00:00.000 や 0:00) を削除
+        // 1. タイム表記を削除
         text = text.replace(/\b\d{1,2}:\d{2}(?:\.\d{1,3})?\b/g, "");
 
-        // 2. コスト表記 (3c, c3, 10c など) を削除（数字がつくもののみ消去し、cキャラ/キャラc を保護）
+        // 2. コスト表記を削除（数字つきのみ削除し、cキャラ等を保護）
         text = text.replace(/\b\d+[cCｃＣ]\b/g, "").replace(/\b[cCｃＣ]\d+\b/g, "");
 
-        // 3. （）や()で囲まれた補足テキストを削除
+        // 3. （）や()で囲まれた補足テキストを削除（ただしキャラ名自体のカッコ表記は直前の処理やベース名変換で判定）
+        // ※「イブキ（水着）」等を事前に判定するためカッコ除去のタイミングを統一
+        const rawForSpecialCheck = text; // 特殊キャラチェック用
         text = text.replace(/（[^）]*）|\([^)]*\)/g, "");
 
         // 4. キャラクター名の前につく「即」を削除
         text = text.replace(/即/g, "");
 
-        // 5. 「、」「,」やスペース（全角半角）で分割
+        // 5. 「、」「,」やスペースで分割
         const tokens = text.split(/[,、\s]+/);
 
         tokens.forEach(token => {
             let trimmed = token.trim();
             if (!trimmed) return;
 
-            // コピー表記（cアル, アルc 等）の判定と除去（大文字全角対応）
+            // --- 特殊挙動キャラ（注意喚起対象）のチェック ---
+            // ドレスヒナ系: ドヒナ, ドレスヒナ, ヒナ(ドレス)
+            // 制服ネル系: セネル, 制服ネル, ネル(制服)
+            // トキ単体: 他の文字がついていない「トキ」のみ
+            if (/ドヒナ|ドレスヒナ|ヒナ.*ドレス|セネル|制服ネル|ネル.*制服/.test(trimmed)) {
+                hasSpecialKeepChar = true;
+            } else {
+                // 完全な単語としての「トキ」判定（臨戦やバニーを排除）
+                const cleanTokenName = getBaseName(trimmed);
+                if (cleanTokenName === "トキ") {
+                    hasSpecialKeepChar = true;
+                }
+            }
+
+            // cキャラ / キャラc の判定と除去
             let isCopyTarget = false;
-            const cMatch = trimmed.match(/^([cCｃＣ])(.+)$/) || trimmed.match(/^(.+)([cCｃＣ])$/);
+            const cMatch = trimmed.match(/^([cCｃＣ])(.+)$/) \vert{}\vert{} trimmed.match(/^(.+)([cCｃＣ])$/);
             
             if (cMatch) {
-                // cを除去した純粋なキャラ名を取得
                 const candidateName = cMatch[1].length === 1 && /[cCｃＣ]/.test(cMatch[1]) ? cMatch[2] : cMatch[1];
-                // 数字でないキャラ名であればコピー指定とみなす
                 if (isNaN(candidateName)) {
                     trimmed = candidateName;
                     isCopyTarget = true;
                 }
             }
 
-            // トークンのベース名取得
+            // ベース名取得
             const base = getBaseName(trimmed);
 
-            // デッキ内のキャラ名との判定（完全一致を優先し、異名キャラとの誤一致を防止）
+            // デッキ内のキャラ名との判定
             const matchedDeckChar = deckBases.find(deckName => {
                 if (base === deckName) return true;
-                // 部分一致は、デッキ名が単体でトークンに含まれ、かつ「リオ」などの短名で別キャラ（臨戦リオ等）を誤検知しない場合のみ
                 if (deckName && base.includes(deckName)) {
-                    // 「リオ」の場合、完全一致でなければ別キャラ（臨戦リオ等）とみなして弾く
                     if (deckName === "リオ" && base !== "リオ") return false;
                     return true;
                 }
@@ -825,13 +845,13 @@ function parseTL() {
             });
 
             if (matchedDeckChar) {
-                // cキャラ / キャラc の位置 -> リオへ変換
+                // 水着イブキ判定 (水着イブキ, 水イブキ, イブキ(水着) 等)
+                const isSwimsuitIbuki = /水着イブキ|水イブキ|イブキ.*水着/.test(token) || /水着イブキ|水イブキ|イブキ.*水着/.test(rawForSpecialCheck);
+
                 if (isCopyTarget) {
                     extractedSkills.push("リオ");
                 } 
-                // コピー表記がTL内に存在し、かつ対象が「純粋なリオ」の場合 -> リオK（リオK1）へ変換
                 else if (hasCopyNotation && base === "リオ") {
-                    // すでに K や K1 等の指定がなければ リオK に補正
                     const parsed = parseCard(trimmed);
                     if (parsed.kCount === 0) {
                         extractedSkills.push("リオK");
@@ -839,7 +859,16 @@ function parseTL() {
                         extractedSkills.push(trimmed);
                     }
                 } 
-                // それ以外の通常のキャラ・記号表記
+                // ★ 水着イブキの1回目を「K」にする処理
+                else if (isSwimsuitIbuki && isFirstIbuki) {
+                    isFirstIbuki = false; // 2回目以降はフラグを倒す
+                    const parsed = parseCard(trimmed);
+                    if (parsed.kCount === 0) {
+                        extractedSkills.push(`${trimmed}K`);
+                    } else {
+                        extractedSkills.push(trimmed);
+                    }
+                }
                 else {
                     extractedSkills.push(trimmed);
                 }
@@ -853,6 +882,11 @@ function parseTL() {
     }
 
     orderInput.value = extractedSkills.join("\n");
+
+    // 注意喚起メッセージの表示切り替え（邪魔にならない控えめな表示）
+    if (warningNotice) {
+        warningNotice.style.display = hasSpecialKeepChar ? "block" : "none";
+    }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
