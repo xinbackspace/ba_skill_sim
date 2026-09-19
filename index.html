@@ -168,14 +168,14 @@ function addCondition(turn = "", name = "", slotIdx = 0) {
         options += `<option value="${i}" ${i === slotIdx ? "selected" : ""}>枠${i + 1}</option>`;
     }
 
-    // ユニークなIDを生成して datalist と紐付け
     const listId = "turn-list-" + Math.random().toString(36).substring(2, 9);
 
+    // キャラ名入力欄に oninput="onNameInput(this)" を追加
     div.innerHTML = `
         <input type="text" list="${listId}" class="condition-turn" placeholder="手数" value="${turn}" style="width: 70px;" oninput="onTurnInput(this)">
         <datalist id="${listId}"></datalist>
         <span>手目の使用直前：</span>
-        <input type="text" class="condition-name" placeholder="キャラクター名" value="${name}" style="width: 120px;">
+        <input type="text" class="condition-name" placeholder="キャラクター名" value="${name}" style="width: 120px;" oninput="onNameInput(this)">
         <span>が</span>
         <select class="condition-slot">${options}</select>
         <span>に配置</span>
@@ -183,21 +183,48 @@ function addCondition(turn = "", name = "", slotIdx = 0) {
     `;
     document.getElementById("conditions").appendChild(div);
 
-    // datalist に手番の候補を自動挿入
     const datalist = div.querySelector(`#${listId}`);
     updateTurnDatalist(datalist);
 }
-// 手番のドロップダウン候補（datalist）を生成
+
+// 手番のドロップダウン候補（datalist）を生成（キャラ名指定時は絞り込み）
 function updateTurnDatalist(datalistEl) {
-    const order = getOrder(); // スキル使用順（TL）の配列を取得
+    const order = getOrder();
     datalistEl.innerHTML = "";
-    
-    // スキル使用順の行数分（または最低20個）手番候補を作成
-    const maxTurns = Math.max(order.length);
-    for (let i = 1; i <= maxTurns; i++) {
-        const opt = document.createElement("option");
-        opt.value = i;
-        datalistEl.appendChild(opt);
+
+    const div = datalistEl.parentElement;
+    const nameInput = div ? div.querySelector(".condition-name") : null;
+    const searchName = nameInput ? nameInput.value.trim() : "";
+
+    if (searchName) {
+        // キャラ名が入力されている場合：TLの中からそのキャラ（またはベース名）が含まれる手番だけを抽出
+        const searchBase = getBaseName(searchName);
+        order.forEach((cardStr, index) => {
+            const cardBase = getBaseName(cardStr);
+            // 完全一致またはベース名一致で絞り込み
+            if (cardStr === searchName || cardBase === searchBase) {
+                const opt = document.createElement("option");
+                opt.value = index + 1; // 1-indexed
+                datalistEl.appendChild(opt);
+            }
+        });
+    } else {
+        // キャラ名が未入力の場合：全手番（1〜行数または20）を候補にセット
+        const maxTurns = Math.max(order.length, 20);
+        for (let i = 1; i <= maxTurns; i++) {
+            const opt = document.createElement("option");
+            opt.value = i;
+            datalistEl.appendChild(opt);
+        }
+    }
+}
+
+// キャラ名欄を入力・変更した際にも手番候補（datalist）を再生成する処理を追加
+function onNameInput(inputEl) {
+    const div = inputEl.parentElement;
+    const datalist = div.querySelector("datalist");
+    if (datalist) {
+        updateTurnDatalist(datalist);
     }
 }
 
