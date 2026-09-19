@@ -193,7 +193,7 @@ function updateTurnDatalist(datalistEl) {
     datalistEl.innerHTML = "";
     
     // スキル使用順の行数分（または最低20個）手番候補を作成
-    const maxTurns = Math.max(order.length, 20);
+    const maxTurns = Math.max(order.length);
     for (let i = 1; i <= maxTurns; i++) {
         const opt = document.createElement("option");
         opt.value = i;
