@@ -821,7 +821,7 @@ function parseTL() {
 
             // cキャラ / キャラc の判定と除去
             let isCopyTarget = false;
-            const cMatch = trimmed.match(/^([cCｃＣ])(.+)$/) \vert{}\vert{} trimmed.match(/^(.+)([cCｃＣ])$/);
+            const cMatch = trimmed.match(/^([cCｃＣ])(.+)$/) || trimmed.match(/^(.+)([cCｃＣ])$/);
             
             if (cMatch) {
                 const candidateName = cMatch[1].length === 1 && /[cCｃＣ]/.test(cMatch[1]) ? cMatch[2] : cMatch[1];
